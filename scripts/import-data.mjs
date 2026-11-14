@@ -57,11 +57,13 @@ const ACTION = {
   push: term('action', 'push', 'Schieben'),
   pull: term('action', 'pull', 'Ziehen'),
   jump: term('action', 'jump', 'Springen'),
+  fly: 'Fliegen',
   loot: term('action', 'loot', 'Beute'),
   summon: 'Beschwören',
   sufferDamage: 'Erleide Schaden',
 };
 
+const SLOT_NAME = { head: 'Kopf', body: 'Körper', legs: 'Beine', onehand: 'Einhand', twohand: 'Zweihand', small: 'Klein' };
 const monsterName = (id) => firstOf(['monster', id], [de, en]) || id;
 
 function resolveText(text, depth = 0) {
@@ -70,6 +72,7 @@ function resolveText(text, depth = 0) {
     .replace(/%([^%]+)%/g, (_, raw) => {
       const [key, arg] = raw.split(':');
       const p = key.split('.');
+      if (p[0] === 'data' && p[1] === 'characterColored') return arg || '';
       if (p[0] === 'data') {
         if (depth > 3) return '';
         const path = p.slice(1);
@@ -91,8 +94,11 @@ function resolveText(text, depth = 0) {
       if (p[1] === 'custom' && p[2] === 'disadvantage') return 'Nachteil';
       if (p[1] === 'specialTarget' && p[2] === 'self') return 'selbst';
       if (p[1] === 'mapMarker') return (p[2] || '').toUpperCase();
+      if (p[1] === 'items' && p[2] === 'slots') return `(${SLOT_NAME[p[3]] || p[3]})`;
+      if (p[1] === 'attackmodifier') return { double: '×2', plus0: '+0', minus1: '−1', minus2: '−2', plus1: '+1', plus2: '+2', null: 'Fehlschlag' }[p[2]] || '';
       return '';
     })
+    .replace(/<br>/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/\s+([.,])/g, '$1')
     .trim();
@@ -131,8 +137,15 @@ const emptyHalf = () => ({
   attacks: [], ranged: false, area: 0, targets: 1, allTargets: false,
   move: 0, jump: false, heal: 0, healAllies: false, shield: 0, shieldAllies: false,
   retaliate: 0, pierce: 0, push: 0, pull: 0, loot: 0, summon: false,
-  conditions: [], gen: [], use: [], text: [],
+  conditions: [], gen: [], use: [], text: [], slots: [],
 });
+
+// Trifft die Aktion mehrere Ziele? Dann kosten Verbesserungen darauf das Doppelte.
+const isMulti = (a) => (a.subActions || []).some((x) => x.type === 'area'
+  || (x.type === 'target' && Number(x.value) > 1)
+  || (x.type === 'specialTarget' && /^(enemies|allies|selfAllies|alliesEnemies)/.test(String(x.value))));
+const MODIFIER = ['range', 'target', 'pierce', 'push', 'pull', 'condition', 'area', 'specialTarget'];
+const SLOT_SHAPES = ['square', 'circle', 'diamond', 'diamond_plus', 'hex'];
 
 function signed(a) {
   if (a.valueType === 'plus' || a.valueType === 'add') return `+${a.value}`;
@@ -147,18 +160,29 @@ function walk(actions, half, ctx) {
   for (const a of actions || []) {
     const sub = a.subActions || [];
     const num = typeof a.value === 'number' ? a.value : parseInt(a.value, 10) || 0;
+    const multi = isMulti(a) || !!(ctx && ctx.multi && MODIFIER.includes(a.type));
+    // Verbesserungsfelder dieser Zeile merken (Form bestimmt, welche Aufkleber passen)
+    for (const shape of a.enhancementTypes || []) {
+      if (!SLOT_SHAPES.includes(shape)) continue;
+      const bonus = a.valueType === 'plus' || a.valueType === 'minus' || a.valueType === 'add';
+      half.slots.push({
+        on: a.type, shape, multi,
+        ai: a.type === 'attack' && !bonus ? half.attacks.length : -1,
+        hexes: a.type === 'area' ? (String(a.value).match(/target/g) || []).length : 0,
+      });
+    }
     switch (a.type) {
       case 'attack': {
         // "+1 Angriff" als Bonus (z. B. nach Elementverbrauch) ist kein eigener Angriff
         const isBonus = a.valueType === 'plus' || a.valueType === 'minus' || a.valueType === 'add';
         if (!isBonus) half.attacks.push(num);
-        const inner = walk(sub, half, { kind: 'attack' });
+        const inner = walk(sub, half, { kind: 'attack', multi });
         out.push([`${ACTION.attack} ${signed(a)}`, ...inner].join(', '));
         break;
       }
       case 'move':
         if (!ctx) half.move = Math.max(half.move, num);
-        out.push([`${ACTION.move} ${signed(a)}`, ...walk(sub, half, { kind: 'move' })].join(', '));
+        out.push([`${ACTION.move} ${signed(a)}`, ...walk(sub, half, { kind: 'move', multi })].join(', '));
         break;
       case 'jump':
         half.jump = true;
@@ -166,19 +190,19 @@ function walk(actions, half, ctx) {
         break;
       case 'heal': {
         half.heal = Math.max(half.heal, num);
-        const inner = walk(sub, half, { kind: 'heal' });
+        const inner = walk(sub, half, { kind: 'heal', multi });
         out.push([`${ACTION.heal} ${signed(a)}`, ...inner].join(', '));
         break;
       }
       case 'shield': {
         half.shield = Math.max(half.shield, num);
-        const inner = walk(sub, half, { kind: 'shield' });
+        const inner = walk(sub, half, { kind: 'shield', multi });
         out.push([`${ACTION.shield} ${signed(a)}`, ...inner].join(', '));
         break;
       }
       case 'retaliate':
         half.retaliate = Math.max(half.retaliate, num);
-        out.push([`${ACTION.retaliate} ${signed(a)}`, ...walk(sub, half, { kind: 'retaliate' })].join(', '));
+        out.push([`${ACTION.retaliate} ${signed(a)}`, ...walk(sub, half, { kind: 'retaliate', multi })].join(', '));
         break;
       case 'range':
         if (ctx && ctx.kind === 'attack' && num > 1) half.ranged = true;
@@ -220,7 +244,7 @@ function walk(actions, half, ctx) {
       case 'condition': {
         const c = String(a.value).split(':')[0];
         if (!half.conditions.includes(c)) half.conditions.push(c);
-        const inner = walk(sub, half, { kind: 'condition' });
+        const inner = walk(sub, half, { kind: 'condition', multi });
         out.push([COND(c), ...inner].join(', '));
         break;
       }
@@ -363,6 +387,26 @@ for (const file of readDir(join(GH, 'monster'))) {
   };
 }
 
+// Angriffe einer Monsterkarte: relativ zum Grundwert (rel) oder fester Wert (abs)
+function deckAttacks(actions) {
+  const out = [];
+  for (const a of actions || []) {
+    if (a.type === 'attack') {
+      const v = typeof a.value === 'number' ? a.value : parseInt(a.value, 10) || 0;
+      const sub = a.subActions || [];
+      const pierce = sub.find((x) => x.type === 'pierce');
+      const entry = { pierce: pierce ? Number(pierce.value) || 0 : 0 };
+      if (a.valueType === 'plus') entry.rel = v;
+      else if (a.valueType === 'minus') entry.rel = -v;
+      else entry.abs = v;
+      out.push(entry);
+    } else if (!['move', 'heal', 'shield', 'retaliate', 'condition', 'element', 'summon', 'loot'].includes(a.type)) {
+      out.push(...deckAttacks(a.subActions));
+    }
+  }
+  return out;
+}
+
 const decks = {};
 for (const file of readDir(join(GH, 'monster', 'deck'))) {
   const d = readJson(join(GH, 'monster', 'deck', file));
@@ -370,7 +414,7 @@ for (const file of readDir(join(GH, 'monster', 'deck'))) {
     const half = emptyHalf();
     const text = walk(a.actions, half, null);
     return {
-      initiative: a.initiative, shuffle: !!a.shuffle, text,
+      initiative: a.initiative, shuffle: !!a.shuffle, text, attacks: deckAttacks(a.actions),
       shield: half.shield, heal: half.heal, retaliate: half.retaliate,
       conditions: half.conditions, ranged: half.ranged, area: half.area > 0,
     };
@@ -405,6 +449,92 @@ for (const file of readDir(join(GH, 'scenarios'))) {
 }
 scenarios.sort((a, b) => a.id - b.id);
 
+// ---------- Gegenstände ----------
+const ITEM_DIRS = [[1, 14], [15, 21], [22, 28], [29, 35], [36, 42], [43, 49], [50, 56], [57, 63], [64, 70], [71, 95], [96, 133], [134, 151]];
+const pad3 = (n) => String(n).padStart(3, '0');
+function itemImage(id, nameEn) {
+  const r = ITEM_DIRS.find(([a, b]) => id >= a && id <= b);
+  if (!r) return null;
+  const copy = id >= 71 && id <= 95 ? 'a' : ''; // diese Karten gibt es bei Worldhaven doppelt (a/b)
+  return `${pad3(r[0])}-${pad3(r[1])}/gh-${pad3(id)}${copy}-${slug(nameEn)}.png`;
+}
+const itemLines = (src, id) => {
+  const e = dig(src, ['items', `gh-${id}`]) || {};
+  return Object.keys(e).filter((k) => k).sort((a, b) => Number(a) - Number(b)).map((k) => e[k]).filter((v) => typeof v === 'string');
+};
+
+// Grobe Einordnung der Wirkung aus dem englischen Regeltext, für die Kaufempfehlung.
+function itemTags(raw, item) {
+  const t = {};
+  const num = (re) => { const m = raw.match(re); return m ? Number(m[1]) : 0; };
+  const words = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+  const set = (k, v) => { if (v && (!Array.isArray(v) || v.length)) t[k] = v; };
+  const shield = num(/game\.action\.shield:(\d+)/);
+  set('shield', shield);
+  const charges = raw.match(/next (two|three|four|five) sources of damage/);
+  if (shield) t.charges = charges ? words[charges[1]] : 1;
+  const baseMove = raw.match(/default bottom[^"]*"%game\.action\.move:(\d+)%/);
+  set('move', baseMove ? Number(baseMove[1]) - 2 : num(/game\.action\.move\.valueSign:(\d+)/));
+  set('jump', /game\.action\.(jump|fly)/.test(raw));
+  const baseAttack = raw.match(/default top[^"]*"%game\.action\.attack:(\d+)%/);
+  set('attack', /ally's attack/.test(raw) ? 0 : baseAttack ? Number(baseAttack[1]) - 2 : num(/game\.action\.attack\.valueSign:(\d+)/));
+  set('advantage', /gain Advantage/.test(raw));
+  set('attackerDisadvantage', /attacker gains Disadvantage/.test(raw));
+  set('heal', /self/i.test(raw) ? num(/game\.action\.heal:(\d+)/) : 0);
+  const stamina = raw.match(/up to (two|three) of your dis/);
+  set('stamina', stamina ? words[stamina[1]] : 0);
+  set('refresh', /Refresh/.test(raw));
+  set('pierce', /ignore all Shield/.test(raw) ? 9 : num(/game\.action\.pierce:(\d+)/));
+  set('range', num(/game\.action\.range\.valueSign:(\d+)/));
+  set('retaliate', num(/game\.action\.retaliate:(\d+)/));
+  set('noDamage', /suffer no damage instead/.test(raw) && !/summon/.test(raw));
+  set('initiative', num(/initiative value by (\d+)/));
+  set('cure', /remove (one|all) negative condition/.test(raw));
+  const conds = (text) => [...text.matchAll(/game\.condition\.(\w+)/g)].map((m) => m[1]);
+  const immune = [...new Set([
+    ...[...raw.matchAll(/immune to ([^.]*)/g)].flatMap((m) => conds(m[1])),
+    ...(item.effects || []).filter((e) => e.type === 'immune').map((e) => e.value),
+  ])];
+  set('immune', immune);
+  const gained = [...raw.matchAll(/[Gg]ain %game\.condition\.(\w+)%/g)].map((m) => m[1]);
+  if (/strengthen% yourself/.test(raw)) gained.push('strengthen');
+  set('selfBuff', gained.filter((c) => ['invisible', 'strengthen', 'bless'].includes(c)));
+  const negative = ['stun', 'poison', 'wound', 'muddle', 'immobilize', 'disarm', 'curse'];
+  if (!/immune to|remove (one|all)|Whenever you gain/.test(raw)) {
+    set('inflict', [...new Set(conds(raw).filter((c) => negative.includes(c) && !gained.includes(c)))]);
+  }
+  const el = raw.match(/create (any two elements|any element|Ice|Air|Fire|Earth|Light|Dark)/);
+  if (el) t.element = el[1].startsWith('any') ? 'wild' : el[1].toLowerCase();
+  set('minusOne', item.minusOne || 0);
+  set('noCrit', /attackmodifier\.double/.test(raw));
+  // Wirkt nur bei eigenen Fern- oder Nahkampfangriffen
+  if (/ranged attack/.test(raw)) t.needs = 'ranged';
+  else if (/melee attack/.test(raw)) t.needs = 'melee';
+  return t;
+}
+
+const items = [];
+if (existsSync(join(GH, 'items.json'))) {
+  for (const it of readJson(join(GH, 'items.json'))) {
+    const key = ['items', `gh-${it.id}`];
+    const linesDe = itemLines(deSp, it.id);
+    const linesEn = itemLines(enSp, it.id);
+    items.push({
+      id: it.id,
+      name: firstOf(key, [own, deSp, de]) || it.name,
+      nameEn: it.name,
+      cost: it.cost || 0,
+      slot: it.slot,
+      prosperity: it.unlockProsperity || 0, // 0 = nicht im Laden, kommt über Belohnungen und Entwürfe
+      use: it.consumed ? 'consumed' : it.spent ? 'spent' : 'passive',
+      text: (linesDe.length ? linesDe : linesEn).map((l) => resolveText(l)).filter(Boolean).join(' '),
+      german: linesDe.length > 0 || linesEn.length === 0,
+      tags: itemTags(linesEn.join(' '), it),
+      img: itemImage(it.id, it.name),
+    });
+  }
+}
+
 // ---------- Ausgabe ----------
 const conditionNames = {};
 for (const c of ['stun', 'immobilize', 'disarm', 'wound', 'muddle', 'poison', 'curse', 'bless', 'strengthen', 'invisible']) {
@@ -417,12 +547,13 @@ const out = {
   source: 'Gloomhaven Secretariat (github.com/Lurkars/gloomhavensecretariat), Daten: CC BY-NC-SA 4.0 / Cephalofair Games',
   imported: new Date().toISOString().slice(0, 10),
   imageBase: 'https://raw.githubusercontent.com/any2cards/worldhaven/master/images/character-ability-cards/gloomhaven/',
+  itemImageBase: 'https://raw.githubusercontent.com/any2cards/worldhaven/master/images/items/gloomhaven/',
   conditionNames, elementNames,
-  characters, monsters, decks, scenarios,
+  characters, monsters, decks, scenarios, items,
 };
 mkdirSync(dirname(outFile), { recursive: true });
 writeFileSync(outFile, JSON.stringify(out));
 console.log(
   `gamedata geschrieben: ${characters.length} Klassen, ${characters.reduce((n, c) => n + c.cards.length, 0)} Karten, ` +
-  `${Object.keys(monsters).length} Monster, ${scenarios.length} Szenarien -> ${outFile}`,
+  `${Object.keys(monsters).length} Monster, ${scenarios.length} Szenarien, ${items.length} Gegenstände -> ${outFile}`,
 );

@@ -25,8 +25,17 @@ App und Dienst sprechen nur über `data/update/anfrage` (schreibt die App: `prue
 ## Spielplan
 `gamePlan()` in `public/logic.js` spielt die Hand durch: pro Rastzyklus die wertvollste Paarung der Handkarten (exakt über Teilmengen), Reihenfolge nach Aufbau und Elementen, Verlustaktionen nach Budget (Aufbau im ersten Zyklus, Rest spät, letzte Runde frei), beim Rasten geht die schwächste Karte. Bewertet wird mit `scoreHalf()`, neue Regeln gehören dorthin.
 
+## Charakterbildschirm
+`public/held.js` zeichnet ihn und verarbeitet seine Klicks. Es bekommt alles über `heldCtx` aus `app.js` und hält keinen eigenen Zustand. Am Profil hängen `xp`, `gold`, `items` (`{id, worn}`), `enh` (gekaufte Verbesserungen je Klasse) und `tank`. `heldDefaults()` ergänzt die Felder bei alten Profilen. Gekaufte Verbesserungen rechnet `applyEnhancements()` in die Karten ein, deshalb läuft der Kartenvorrat immer über `pool()`.
+
+Guide-Empfehlungen stehen in `public/tipps.js` (Kartennamen englisch, Text in eigenen Worten, Quelle nennen). Die Aufstiegsempfehlung folgt dem Guide, wenn einer hinterlegt ist, sonst der Rechnung aus `levelUpAdvice()`.
+
+Gegenstände kommen aus `items.json` von GHS. `itemTags()` im Import leitet aus dem englischen Regeltext grobe Merkmale ab, `scoreItem()` bewertet damit.
+
 ## Offene Ideen
-- Angriffsmodifikator-Deck mit Perks (Daten stehen in GHS unter `character/<klasse>.json`).
-- Gegenstände und Verbesserungen.
-- Deutsche Kartentexte für freischaltbare Klassen von Hand nachtragen.
+- Angriffsmodifikator-Deck mit Perks: vom Nutzer ausdrücklich nicht gewünscht.
+- Gruppenansicht über alle Spieler: ebenfalls nicht gewünscht.
+- Verbesserungsfelder von Beschwörungen.
+- Gedruckte deutsche Kartennamen der Sonnenhüterin eintragen, sobald der Nutzer Fotos schickt.
+- Deutsche Kartentexte für die anderen freischaltbaren Klassen von Hand nachtragen.
 - Schriften lokal ausliefern statt über Google Fonts.

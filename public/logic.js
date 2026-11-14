@@ -102,6 +102,7 @@ export function scenarioProfile(data, scenario, players, level) {
     if (!cards.length) continue;
     const inits = cards.map((c) => c.initiative);
     deckTraits[e.id] = {
+      inits: [...inits].sort((x, y) => x - y),
       initMin: Math.min(...inits), initMax: Math.max(...inits),
       initAvg: Math.round(inits.reduce((a, b) => a + b, 0) / inits.length),
       shield: cards.some((c) => c.shield > 0), heal: cards.some((c) => c.heal > 0),
@@ -524,18 +525,62 @@ function orderRounds(pairs, carried) {
   return { rounds: out, carried: [...avail] };
 }
 
+// Wie oft bist du mit dieser Initiative vor den einzelnen Gegnertypen dran?
+// Gezählt wird über die Karten des Monsterdecks. Bei Gleichstand sind Spieler zuerst dran.
+export function initiativeOdds(profile, initiative) {
+  return profile.groups.map((g) => {
+    const d = profile.deckTraits[g.id];
+    if (!d || !d.inits) return null;
+    return {
+      id: g.id, name: g.name, of: d.inits.length,
+      before: d.inits.filter((i) => i >= initiative).length,
+      count: g.types.reduce((a, t) => a + t.count, 0),
+    };
+  }).filter(Boolean).sort((a, b) => b.count - a.count);
+}
+
+// Geschätzte Szenariolänge in Runden: Gegnerleben (Schild zählt mit) geteilt durch
+// den üblichen Gruppenschaden, plus Wege zwischen den Räumen. "factor" kommt aus
+// euren eingetragenen Partien.
+export function estimateRounds(profile, scenario, factor = 1) {
+  if (!profile.enemies) return { rounds: 12, base: 12, known: false };
+  let eff = 0;
+  for (const g of profile.groups) for (const t of g.types) eff += t.count * (t.stats.hp + t.stats.shield * Math.ceil(t.stats.hp / 4));
+  const perRound = profile.players * (2.5 + 0.6 * profile.level);
+  const rooms = scenario && scenario.rooms ? scenario.rooms.length : 1;
+  const base = Math.round(clamp(eff / perRound + rooms, 6, 28));
+  return { rounds: Math.round(clamp(base * factor, 6, 30)), base, known: true };
+}
+
+// Verhältnis aus gespielten zu geschätzten Runden über eure Partien (Median)
+export function calibration(results) {
+  // nur gewonnene Partien: eine Niederlage sagt nichts über die Länge des Szenarios
+  const ratios = Object.values(results || {}).filter((r) => r && r.won !== false && r.rounds > 0 && r.est > 0).map((r) => r.rounds / r.est).sort((a, b) => a - b);
+  if (!ratios.length) return { factor: 1, n: 0 };
+  const m = ratios.length;
+  const mid = m % 2 ? ratios[(m - 1) / 2] : (ratios[m / 2 - 1] + ratios[m / 2]) / 2;
+  return { factor: clamp(mid, 0.6, 1.7), n: m };
+}
+
 // Spielt die Hand komplett durch und liefert einen Rundenplan.
 // opts.losses: wie viele Verlustaktionen eingeplant werden dürfen
+// opts.target: geschätzte Szenariolänge. Ist sie bekannt, kommen Verlustaktionen früh.
 // opts.longRest: lange Rasten (Karte frei wählbar, kostet eine Runde)
+// opts.tank: du willst die Angriffe auf dich ziehen
 export function gamePlan(cards, profile, opts = {}) {
   const cn = opts.conditionName;
   let budget = opts.losses ?? 2;
   const longRest = !!opts.longRest;
+  const target = opts.target || 0;
+  const tank = !!opts.tank;
   const val = {};
   for (const c of cards) val[c.id] = { top: scoreHalf(c.top, profile, cn), bottom: scoreHalf(c.bottom, profile, cn), card: scoreCard(c, profile, cn).score };
   const basicAttack = Math.max(0, 2 - profile.shieldAvg);
   const enemyInit = enemyInitiative(profile);
   const lossHalves = (pool) => pool.flatMap((c) => ['top', 'bottom'].filter((s) => c[s].lost).map((s) => ({ key: `${c.id}:${s}`, card: c, side: s, value: val[c.id][s].value, setup: isSetup(c[s]) })));
+  // Bosskampf: die stärkste Angriffs-Verlustaktion bleibt für das Ende aufgehoben
+  const held = profile.bosses && target
+    ? lossHalves(cards).filter((x) => !x.setup && x.card[x.side].attacks.length).sort((a, b) => b.value - a.value)[0] : null;
 
   let hand = [...cards];
   let discard = [];
@@ -544,6 +589,7 @@ export function gamePlan(cards, profile, opts = {}) {
   let cycle = 0;
   let carried = [];
   let damage = 0;
+  let xp = 0;
   const lostPlayed = [];
 
   for (let guard = 0; guard < 60 && hand.length >= 2; guard++) {
@@ -552,7 +598,10 @@ export function gamePlan(cards, profile, opts = {}) {
     const candidates = lossHalves(hand).sort((a, b) => b.value - a.value);
     let free = budget;
     if (cycle === 0) for (const c of candidates.filter((x) => x.setup).slice(0, Math.min(2, free))) { enabled.add(c.key); free--; }
-    if (hand.length <= 6 && free > 0) { const c = candidates.find((x) => !x.setup && !enabled.has(x.key)); if (c) enabled.add(c.key); }
+    if (free > 0 && (target > 0 || hand.length <= 6)) {
+      const c = candidates.find((x) => !x.setup && !enabled.has(x.key) && (!held || x.key !== held.key || round >= target - 5));
+      if (c) enabled.add(c.key);
+    }
     // Letzte Runde vor der Erschöpfung: Verlustaktionen kosten nichts mehr
     if (hand.length === 2) for (const c of candidates) enabled.add(c.key);
 
@@ -564,18 +613,22 @@ export function gamePlan(cards, profile, opts = {}) {
       const inis = [p.top.card.initiative, p.bottom.card.initiative].sort((a, b) => a - b);
       const halves = [p.top.half, p.bottom.half];
       const protect = halves.some((h) => (h.conditions || []).some((c) => ['stun', 'disarm', 'immobilize'].includes(c)) || h.heal || h.shield);
-      const waitForThem = !protect && halves.some(melee) && !halves.some((h) => h.move >= 3) && profile.rangedShare < 0.5;
+      const waitForThem = !tank && !protect && halves.some(melee) && !halves.some((h) => h.move >= 3) && profile.rangedShare < 0.5;
       const lead = waitForThem ? inis[1] : inis[0];
-      const leadWhy = waitForThem ? 'spät gehen und die Gegner herankommen lassen' : protect ? 'früh gehen, damit Schutz und Kontrolle vor den Gegnern wirken' : 'früh gehen und zuerst zuschlagen';
+      const leadWhy = tank ? 'früh gehen, damit du vorn stehst und bei Gleichstand das Ziel bist'
+        : waitForThem ? 'spät gehen und die Gegner herankommen lassen'
+          : protect ? 'früh gehen, damit Schutz und Kontrolle vor den Gegnern wirken' : 'früh gehen und zuerst zuschlagen';
       const lostNow = [p.top, p.bottom].filter((x) => !x.basic && x.card[x.side].lost);
       const finale = hand.length === 2;
       for (const x of lostNow) { if (!finale) budget--; lostPlayed.push(x.card.id); }
       damage += p.top.dmg + p.bottom.dmg;
+      for (const x of [p.top, p.bottom]) if (!x.basic) xp += x.card[x.side].xp || 0;
       steps.push({
         type: 'round', n: round, cycle, value: round1(p.value), top: p.top, bottom: p.bottom,
         lead, other: lead === inis[0] ? inis[1] : inis[0], leadWhy, beforeEnemies: lead < enemyInit,
+        odds: initiativeOdds(profile, lead),
         notes: p.notes, selfFed: p.selfFed, fed: p.fed || [], hungry: p.hungry || [],
-        lost: lostNow.map((x) => x.card.id), finale,
+        lost: lostNow.map((x) => x.card.id), finale, reserve: target > 0 && round > target,
       });
       const gone = new Set(lostNow.map((x) => x.card.id));
       for (const c of [p.top.card, p.bottom.card]) if (!gone.has(c.id)) discard.push(c);
@@ -589,7 +642,7 @@ export function gamePlan(cards, profile, opts = {}) {
     hand = [...hand, ...discard];
     discard = [];
     if (longRest) round++;
-    steps.push({ type: 'rest', long: longRest, n: longRest ? round : null, lose: worst, handAfter: hand.length });
+    steps.push({ type: 'rest', long: longRest, n: longRest ? round : null, lose: worst, handAfter: hand.length, reserve: target > 0 && round > target });
     cycle++;
     carried = [];
     if (hand.length < 2) break;
@@ -598,6 +651,289 @@ export function gamePlan(cards, profile, opts = {}) {
   const rounds = steps.filter((s) => s.type === 'round').length;
   return {
     steps, rounds, totalRounds: round, damage: Math.round(damage), share: Math.round(profile.hpTotal / profile.players),
-    enemyInit, killOrder: killOrder(profile), lossesPlanned: lostPlayed.length,
+    enemyInit, killOrder: killOrder(profile), lossesPlanned: lostPlayed.length, xp,
+    target, spare: target ? round - target : null,
   };
+}
+
+// Plant so viele Verlustaktionen ein, wie die geschätzte Szenariolänge hergibt:
+// der stärkste Plan, der noch "margin" Runden Reserve über dem Ziel lässt.
+export function autoPlan(cards, profile, opts = {}) {
+  const target = opts.target || 0;
+  const margin = opts.margin ?? 2;
+  let plan = null;
+  for (let b = 6; b >= 0; b--) {
+    plan = gamePlan(cards, profile, { ...opts, losses: b });
+    if (plan.totalRounds >= target + margin) break;
+  }
+  plan.auto = true;
+  plan.enough = plan.totalRounds >= target;
+  return plan;
+}
+
+// ---------- Was bei dir ankommt ----------
+
+// Mittlerer Schaden pro Aktivierung eines Gegners gegen dich, je nach deinem Schild.
+// Gerechnet über alle Karten des Monsterdecks, ohne Angriffsmodifikatoren.
+export function incomingDamage(data, profile, shields = [0, 1, 2, 3]) {
+  const rows = [];
+  for (const g of profile.groups) {
+    const deck = data.decks[g.deck] || [];
+    const cards = deck.length ? deck : [{ attacks: [{ rel: 0, pierce: 0 }] }];
+    for (const t of g.types) {
+      const s = t.stats;
+      const hit = (a) => (a.abs != null ? a.abs : s.attack + (a.rel || 0));
+      const per = shields.map((sh) => {
+        let sum = 0;
+        for (const c of cards) for (const a of c.attacks || []) sum += Math.max(0, hit(a) - Math.max(0, sh - s.pierce - (a.pierce || 0)));
+        return round1(sum / cards.length);
+      });
+      const max = Math.max(0, ...cards.map((c) => (c.attacks || []).reduce((m, a) => m + Math.max(0, hit(a)), 0)));
+      rows.push({
+        id: g.id, name: g.name, type: t.type, count: t.count, per, max, pierce: s.pierce, ranged: s.range > 0,
+        idle: cards.filter((c) => !(c.attacks || []).length).length, cards: cards.length,
+      });
+    }
+  }
+  const total = shields.map((_, i) => round1(rows.reduce((a, r) => a + r.per[i] * r.count, 0)));
+  return { shields, rows, total };
+}
+
+// ---------- Erfahrung ----------
+
+// Nötige Erfahrungspunkte für Stufe 1 bis 9
+export const XP_LEVELS = [0, 45, 95, 150, 210, 275, 345, 420, 500];
+
+export function xpLevel(xp) {
+  let l = 1;
+  while (l < 9 && xp >= XP_LEVELS[l]) l++;
+  return l;
+}
+
+export function xpProgress(xp, level) {
+  const lvl = clamp(level, 1, 9);
+  const from = XP_LEVELS[lvl - 1];
+  if (lvl >= 9) return { from, to: null, ratio: 1, missing: 0, ready: false };
+  const to = XP_LEVELS[lvl];
+  return { from, to, ratio: clamp((xp - from) / (to - from), 0, 1), missing: Math.max(0, to - xp), ready: xp >= to };
+}
+
+// ---------- Stufenaufstieg ----------
+
+const profileCache = new Map();
+function allProfiles(data, players, level) {
+  const key = `${players}|${level}`;
+  if (!profileCache.has(key)) {
+    profileCache.set(key, data.scenarios.map((s) => scenarioProfile(data, s, players, level)).filter((p) => p.enemies > 0));
+  }
+  return profileCache.get(key);
+}
+
+// Vergleicht die Karten, die beim nächsten Stufenaufstieg zur Wahl stehen, über alle
+// Szenarien: Um wie viel wird die beste Hand besser, und wie oft schafft es die Karte hinein?
+export function levelUpAdvice(data, character, level, owned, players = 4, cn) {
+  if (level >= 9) return null;
+  const next = level + 1;
+  const have = cardPool(character, level, owned);
+  const haveIds = new Set(have.map((c) => c.id));
+  const candidates = character.cards.filter((c) => c.level !== 'X' && c.level >= 2 && c.level <= next && !haveIds.has(c.id));
+  const profiles = allProfiles(data, players, Math.ceil(next / 2));
+  const stats = candidates.map((card) => ({ card, delta: 0, inHand: 0, score: 0, reasons: new Map() }));
+  for (const p of profiles) {
+    const base = suggestHand(have, p, character.handSize, { conditionName: cn });
+    const baseScore = new Map(base.scored.map((x) => [x.card.id, x.s.score]));
+    const baseValue = base.hand.reduce((a, id) => a + baseScore.get(id), 0);
+    for (const st of stats) {
+      const r = suggestHand([...have, st.card], p, character.handSize, { conditionName: cn });
+      const sc = new Map(r.scored.map((x) => [x.card.id, x.s]));
+      st.delta += Math.max(0, r.hand.reduce((a, id) => a + sc.get(id).score, 0) - baseValue);
+      const own = sc.get(st.card.id);
+      st.score += own.score;
+      if (r.hand.includes(st.card.id)) st.inHand++;
+      for (const w of own.why) if (w.good) st.reasons.set(w.text, (st.reasons.get(w.text) || 0) + 1);
+    }
+  }
+  const n = Math.max(1, profiles.length);
+  const out = stats.map((st) => ({
+    card: st.card, isNew: st.card.level === next,
+    delta: round1(st.delta / n), rate: st.inHand / n, score: round1(st.score / n),
+    reasons: [...st.reasons.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([text, count]) => ({ text, share: count / n })),
+  })).sort((a, b) => b.delta - a.delta || b.score - a.score);
+  return { next, xpNeeded: XP_LEVELS[next - 1], candidates: out, best: out[0] || null, scenarios: profiles.length };
+}
+
+// ---------- Verbesserungen ----------
+
+// Grundkosten nach Regelheft (Gloomhaven, 1. Auflage)
+export const ENHANCE_BASE = {
+  plus1: { move: 30, attack: 50, range: 30, shield: 100, push: 30, pull: 30, pierce: 30, retaliate: 100, heal: 30, target: 50 },
+  poison: 75, wound: 75, muddle: 50, immobilize: 100, disarm: 150, curse: 75, strengthen: 50, bless: 50,
+  jump: 50, element: 100, wild: 150, hex: 200,
+};
+const NEGATIVE = ['poison', 'wound', 'muddle', 'immobilize', 'disarm', 'curse'];
+const POSITIVE = ['strengthen', 'bless'];
+const ELEMENTS = ['fire', 'ice', 'air', 'earth', 'light', 'dark'];
+
+// Welche Aufkleber passen auf ein Verbesserungsfeld? Die Form des Feldes entscheidet:
+// Quadrat nur +1, Kreis auch Elemente, Raute auch negative, Raute+ auch positive Zustände.
+export function slotStickers(slot, half) {
+  if (slot.shape === 'hex') return ['hex'];
+  const out = [];
+  if (ENHANCE_BASE.plus1[slot.on]) out.push('plus1');
+  if (slot.on === 'move' && !half.jump) out.push('jump');
+  if (slot.shape === 'diamond') out.push(...NEGATIVE);
+  if (slot.shape === 'diamond_plus') out.push(...POSITIVE);
+  if (slot.shape !== 'square') out.push(...ELEMENTS.map((e) => `el:${e}`), 'el:wild');
+  return out;
+}
+
+// Kosten: Grundpreis (doppelt bei mehreren Zielen), +25 je Kartenstufe über 1,
+// +75 je Verbesserung, die schon auf derselben Aktion klebt.
+export function enhancementCost(sticker, slot, card, previous = 0) {
+  let base;
+  if (sticker === 'plus1') base = ENHANCE_BASE.plus1[slot.on] || 0;
+  else if (sticker === 'hex') base = Math.ceil(ENHANCE_BASE.hex / Math.max(1, slot.hexes));
+  else if (sticker === 'el:wild') base = ENHANCE_BASE.wild;
+  else if (sticker.startsWith('el:')) base = ENHANCE_BASE.element;
+  else base = ENHANCE_BASE[sticker] || 0;
+  if (slot.multi && sticker !== 'hex' && !(sticker === 'plus1' && slot.on === 'target')) base *= 2;
+  const level = card.level === 'X' ? 1 : card.level;
+  return base + 25 * (level - 1) + 75 * previous;
+}
+
+const cloneHalf = (h) => ({ ...h, attacks: [...h.attacks], conditions: [...h.conditions], gen: [...h.gen], use: [...h.use], text: [...h.text], enh: [] });
+
+// Rechnet gekaufte Verbesserungen in die Kartenwerte ein.
+export function applyEnhancements(card, list) {
+  const mine = (list || []).filter((e) => e.card === card.id);
+  if (!mine.length) return card;
+  const copy = { ...card, top: cloneHalf(card.top), bottom: cloneHalf(card.bottom) };
+  for (const e of mine) {
+    const half = copy[e.side];
+    const slot = half && half.slots[e.slot];
+    if (!slot) continue;
+    const s = e.sticker;
+    if (s === 'plus1') {
+      if (slot.on === 'attack') { if (slot.ai >= 0 && slot.ai < half.attacks.length) half.attacks[slot.ai] += 1; }
+      else if (slot.on === 'target') half.targets += 1;
+      else if (slot.on !== 'range' && typeof half[slot.on] === 'number') half[slot.on] += 1;
+    } else if (s === 'jump') half.jump = true;
+    else if (s === 'hex') half.area += 1;
+    else if (s.startsWith('el:')) half.gen = [...new Set([...half.gen, s.slice(3)])];
+    else if (!half.conditions.includes(s)) half.conditions.push(s);
+    half.enh.push({ sticker: s, on: slot.on });
+  }
+  return copy;
+}
+
+// Welche Verbesserungen bringen pro Gold am meisten? Faustregel: Nutzen pro Einsatz
+// mal Einsätze pro Szenario (dauerhafte Effekte zählen vielfach, Verlustaktionen einmal).
+export function enhancementAdvice(cards, enhancements, gold = 0) {
+  const list = enhancements || [];
+  const useCount = {};
+  for (const c of cards) for (const h of [c.top, c.bottom]) for (const e of h.use) if (e !== 'wild') useCount[e] = (useCount[e] || 0) + 1;
+  const wanted = Object.entries(useCount).sort((a, b) => b[1] - a[1])[0];
+  const out = [];
+  for (const card of cards) {
+    for (const side of ['top', 'bottom']) {
+      const half = card[side];
+      const previous = list.filter((e) => e.card === card.id && e.side === side).length;
+      const plays = half.lost ? 1 : 4; // so oft spielst du die Aktion ungefähr pro Szenario
+      const targets = Math.min(3, Math.max(half.targets, half.area || 1, half.allTargets ? 3 : 1));
+      half.slots.forEach((slot, index) => {
+        if (list.some((e) => e.card === card.id && e.side === side && e.slot === index)) return;
+        for (const sticker of slotStickers(slot, half)) {
+          let benefit = 0;
+          // Ein dauerhafter Schild wirkt bei jedem Treffer, alles andere nur beim Ausspielen
+          const lasting = half.persistent && sticker === 'plus1' && (slot.on === 'shield' || slot.on === 'retaliate');
+          const uses = lasting ? 10 : plays;
+          if (sticker === 'plus1') {
+            benefit = ({
+              attack: targets, move: 0.55, heal: 0.6 * (half.healAllies ? 2 : 1), shield: 1.2 * (half.shieldAllies ? 1.5 : 1),
+              retaliate: 1, range: 0.4, target: (half.attacks[0] || 2) * 0.8, pierce: 0.3, push: 0.3, pull: 0.3,
+            })[slot.on] || 0;
+          } else if (sticker === 'jump') benefit = 0.5;
+          else if (sticker === 'hex') benefit = (half.attacks[0] || 2) * 0.7;
+          else if (sticker.startsWith('el:')) benefit = wanted && wanted[1] >= 2 && sticker === `el:${wanted[0]}` && !half.gen.includes(wanted[0]) ? 1.2 : 0;
+          else if (POSITIVE.includes(sticker)) benefit = (CONDITION_VALUE[sticker] || 1) * 0.5;
+          else benefit = (CONDITION_VALUE[sticker] || 1) * 0.8 * (slot.on === 'attack' ? targets : 1);
+          if (benefit <= 0) continue;
+          const cost = enhancementCost(sticker, slot, card, previous);
+          out.push({ card, side, index, slot, sticker, cost, value: round1(benefit * uses), ratio: (benefit * uses) / cost * 100, affordable: cost <= gold });
+        }
+      });
+    }
+  }
+  return out.sort((a, b) => b.ratio - a.ratio);
+}
+
+// ---------- Gegenstände ----------
+
+// Bewertet einen Gegenstand für ein Szenario. Grundlage sind grobe Merkmale aus dem
+// Regeltext, deshalb nur als Orientierung gedacht.
+export function scoreItem(item, p, cn = (c) => c, fit = null) {
+  const t = item.tags || {};
+  let v = 0;
+  const why = [];
+  const add = (x, text) => { v += x; if (text) why.push(text); };
+  const bad = (p.inflicts.poison || 0) + (p.inflicts.wound || 0);
+  if (t.stamina) add(3 * t.stamina, 'Holt gespielte Karten zurück: mehr Runden und deine beste Aktion ein zweites Mal');
+  if (t.move) add(1.2 * t.move + (p.rangedShare >= 0.4 ? 1 : 0), p.rangedShare >= 0.4 ? 'Mehr Bewegung, um die Fernkämpfer zu erreichen' : 'Mehr Bewegung');
+  if (t.jump) add(1.2, 'Über Hindernisse und Gegner hinweg');
+  if (t.shield) {
+    const crowd = p.biggestRoom >= p.players * 2 && p.attackAvg <= 3.5;
+    add(1.3 * t.shield * (t.charges || 1) * (1 - p.pierceShare) + (crowd ? 1 : 0),
+      p.pierceShare >= 0.2 ? 'Schild, aber Gegner durchbohren ihn teilweise' : crowd ? 'Schild gegen viele schwache Angriffe' : 'Schild gegen mehrere Treffer');
+  }
+  if (t.noDamage) add(3.5, p.bosses ? 'Verhindert einen ganzen Treffer, stark gegen den Boss' : 'Verhindert einen ganzen Treffer');
+  if (t.attackerDisadvantage) add(2.2, 'Angreifer haben Nachteil');
+  if (t.heal) add(0.5 * t.heal + (bad >= 0.2 ? 1.5 : 0), bad >= 0.2 ? 'Heilung entfernt Gift und Wunde' : 'Heilung im Notfall');
+  if (t.attack) add(1.5 * t.attack + (p.bosses ? 0.5 : 0), p.bosses ? 'Mehr Schaden für den Boss' : 'Mehr Schaden');
+  if (t.pierce) add(p.shieldShare >= 0.25 ? 3 : 0.5, p.shieldShare >= 0.25 ? 'Umgeht den Schild der Gegner' : '');
+  if (t.advantage) add(1.5, 'Vorteil beim Angriff');
+  if (t.range) add(0.8 * t.range + (p.retaliateShare >= 0.2 ? 1 : 0), p.retaliateShare >= 0.2 ? 'Mehr Reichweite, um Vergeltung zu umgehen' : 'Mehr Reichweite');
+  if (t.retaliate) add(t.retaliate * (1 - p.rangedShare), 'Vergeltung gegen Nahkämpfer');
+  for (const c of t.inflict || []) {
+    let cv = CONDITION_VALUE[c] ?? 1;
+    if (p.immunities.includes(c)) cv *= 1 - p.bossHpShare;
+    if ((c === 'poison' || c === 'wound') && p.shieldShare >= 0.25) cv += 1;
+    add(cv, `Verteilt ${cn(c)}`);
+  }
+  for (const c of t.immune || []) {
+    const share = p.inflicts[c] || 0;
+    add(share >= 0.2 ? 3 : share > 0 ? 1.5 : 0.2, share > 0 ? `Gegner verteilen ${cn(c)}, du bist immun` : '');
+  }
+  for (const c of t.selfBuff || []) add(c === 'invisible' ? 2.5 : 1.5, c === 'invisible' ? 'Unsichtbar: Gegner können dich nicht angreifen' : `Gibt dir ${cn(c)}`);
+  if (t.cure) add(Object.values(p.inflicts).some((x) => x >= 0.2) ? 2.5 : 0.5, 'Entfernt Zustände');
+  if (t.refresh) add(1.5, 'Frischt Gegenstände auf');
+  if (t.element) add(0.5, '');
+  if (t.initiative) add(t.initiative / 10, 'Initiative verschieben: gezielt vor oder nach den Gegnern dran sein');
+  if (t.noCrit) add(2.2, 'Gegnerische ×2-Treffer zählen nur als +0');
+  if (t.minusOne) add(-0.4 * t.minusOne, `Bringt ${t.minusOne}× −1 ins Angriffsdeck`);
+  if (item.use === 'passive') v *= 1.4;
+  else if (item.use === 'spent') v *= 1.2;
+  if (v <= 0 && !why.length) { v = 1; why.push('Sondereffekt, bitte selbst einschätzen'); }
+  // Passt der Gegenstand zu deinen Karten?
+  if (t.needs && fit && fit[t.needs] < 2) {
+    v *= 0.25;
+    why.unshift(t.needs === 'ranged' ? 'Wirkt nur bei Fernangriffen, davon hast du kaum welche' : 'Wirkt nur im Nahkampf, davon hast du kaum Angriffe');
+  }
+  return { score: round1(Math.max(0, v)), why: why.filter(Boolean).slice(0, 3) };
+}
+
+// Wie viele wiederholbare Nah- und Fernangriffe stecken in deinen Karten?
+export function attackFit(cards) {
+  const fit = { melee: 0, ranged: 0 };
+  for (const c of cards) for (const h of [c.top, c.bottom]) if (h.attacks.length && !h.lost) fit[h.ranged ? 'ranged' : 'melee']++;
+  return fit;
+}
+
+// Kaufempfehlung: was es bei eurer Wohlstandsstufe im Laden gibt, sortiert nach Nutzen.
+export function shopAdvice(data, p, opts = {}) {
+  const { gold = 0, prosperity = 1, owned = [], cn, cards = null } = opts;
+  const fit = cards ? attackFit(cards) : null;
+  return (data.items || [])
+    .filter((it) => it.prosperity > 0 && it.prosperity <= prosperity && !owned.includes(it.id))
+    .map((item) => ({ item, ...scoreItem(item, p, cn, fit), affordable: item.cost <= gold }))
+    .sort((a, b) => b.score - a.score);
 }

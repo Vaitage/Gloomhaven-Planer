@@ -1,4 +1,5 @@
-import { scenarioProfile, cardPool, scoreCard, suggestHand, handStats, stamina, gamePlan } from './logic.js';
+import { scenarioProfile, cardPool, scoreCard, suggestHand, handStats, stamina, autoPlan, estimateRounds, calibration, incomingDamage, xpProgress, applyEnhancements } from './logic.js';
+import { renderHeld, heldClick, heldInput, heldChange, heldDefaults, stickerName } from './held.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -20,6 +21,11 @@ const local = {
   poolFilter: 'vorrat',
   losses: 2,
   longRest: false,
+  heldTab: 'uebersicht',
+  itemSuche: '',
+  enhCard: null,
+  epAlt: null,
+  targets: {}, // von Hand gesetzte Szenariolänge je Szenario
 };
 
 // ---------- Laden und Speichern ----------
@@ -66,7 +72,10 @@ const handKey = () => `${profile().classId}|${local.scenario}`;
 const owned = () => (profile().owned[profile().classId] ||= []);
 const currentHand = () => (profile().hands[handKey()] ||= []);
 const currentProfile = () => scenarioProfile(data, scenario(), state.shared.players, state.shared.level);
-const pool = () => cardPool(character(), profile().level, owned());
+const enhList = () => ((profile().enh ||= {})[profile().classId] ||= []);
+// Kartenvorrat mit eingerechneten Verbesserungen
+const pool = () => cardPool(character(), profile().level, owned()).map((c) => applyEnhancements(c, enhList()));
+const kommazahl = (n) => Number(n).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 function classLabel(c, reveal) {
   if (!c.locked) return c.name;
@@ -79,7 +88,12 @@ function renderHeader() {
   const p = profile();
   const c = character();
   $('#heldName').textContent = c ? c.name : 'Held wählen';
-  $('#heldSub').textContent = p && c ? `Stufe ${p.level}, ${local.profile}` : 'Tippen zum Einrichten';
+  if (p) heldDefaults(p);
+  $('#heldSub').textContent = p && c ? `Stufe ${p.level}, ${p.gold} Gold` : 'Tippen zum Einrichten';
+  $('#heldBtn').classList.toggle('aktiv', local.tab === 'held');
+  const mini = $('#miniEp');
+  mini.parentElement.hidden = !(p && c);
+  if (p && c) mini.style.width = `${Math.round(xpProgress(p.xp, p.level).ratio * 100)}%`;
   document.documentElement.style.setProperty('--klasse', c ? c.color : '#c9a24a');
   const neu = !!(updates && updates.status && updates.status.verfuegbar);
   document.querySelectorAll('.reiter button').forEach((b) => {
@@ -136,10 +150,13 @@ function openHeld() {
       err.hidden = false;
       return;
     }
+    const neu = !state.profiles[name];
     const q = (state.profiles[name] ||= { classId: form.klasse.value, level: 1, owned: {}, hands: {} });
     q.classId = form.klasse.value;
     q.level = Number(form.stufe.value);
     q.owned ||= {}; q.hands ||= {};
+    heldDefaults(q);
+    if (neu) q.xpGeschaetzt = q.level > 1;
     local.profile = name;
     localStorage.setItem('gp.profil', name);
     saveProfile();
@@ -148,7 +165,13 @@ function openHeld() {
   });
   heldDialog.showModal();
 }
-$('#heldBtn').addEventListener('click', openHeld);
+// Mit Held führt der Kopf zum Charakterbildschirm, ohne Held zum Einrichten
+$('#heldBtn').addEventListener('click', () => {
+  if (!profile()) return openHeld();
+  local.tab = 'held';
+  render();
+  window.scrollTo(0, 0);
+});
 
 // ---------- Bausteine ----------
 
@@ -172,7 +195,10 @@ function scenarioBar() {
 
 function halfHtml(h, label) {
   const text = h.text.length ? h.text.map(esc).join(' · ') : 'keine Angabe';
-  const tags = [h.lost ? '<span class="marke verlust">Verlust</span>' : '', h.persistent ? '<span class="marke">dauerhaft</span>' : '', h.round ? '<span class="marke">diese Runde</span>' : ''].join('');
+  const tags = [
+    h.lost ? '<span class="marke verlust">Verlust</span>' : '', h.persistent ? '<span class="marke">dauerhaft</span>' : '', h.round ? '<span class="marke">diese Runde</span>' : '',
+    ...(h.enh || []).map((e) => `<span class="marke gut">verbessert: ${esc(stickerName(heldCtx, e.sticker, e.on))}</span>`),
+  ].join(' ');
   return `<p class="haelfte"><span class="haelfte-name">${label}</span><span>${text} ${tags}</span></p>`;
 }
 
@@ -251,6 +277,22 @@ function renderScenario() {
     return `<article class="raum"><h3>Raum ${r.n}${r.ref ? ` (${esc(r.ref)})` : ''}${r.initial ? ', Start' : ''}</h3>${list ? `<ul>${list}</ul>` : '<p>Keine Monster zu Beginn.</p>'}</article>`;
   }).join('') : '';
 
+  const inc = incomingDamage(data, p);
+  const typKurz = { normal: 'normal', elite: 'Elite', boss: 'Boss' };
+  const anteil = (i) => (inc.total[0] > 0 ? Math.round((inc.total[i] / inc.total[0]) * 100) : 0);
+  const schaden = inc.rows.length ? `
+    <section>
+      <h2>Was bei dir ankommt</h2>
+      <div class="tabelle-rahmen">
+        <table class="schaden">
+          <thead><tr><th scope="col">Schaden je Angriff bei</th>${inc.shields.map((x) => `<th scope="col">Schild ${x}</th>`).join('')}</tr></thead>
+          <tbody>${inc.rows.map((r) => `<tr><th scope="row">${esc(r.name)} <small>${r.count}× ${typKurz[r.type]}${r.pierce ? `, Durchbohren ${r.pierce}` : ''}</small></th>${r.per.map((v) => `<td>${kommazahl(v)}</td>`).join('')}</tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <p>Mit Schild 1 kommen noch ${anteil(1)} % des Schadens durch, mit Schild 2 noch ${anteil(2)} %, mit Schild 3 noch ${anteil(3)} %.</p>
+      <p class="hinweis">Mittelwert über alle Karten des jeweiligen Monsterdecks, ohne Angriffsmodifikatoren. Der stärkste einzelne Treffer liegt bei ${Math.max(...inc.rows.map((r) => r.max))}.</p>
+    </section>` : '';
+
   view.innerHTML = `
     ${scenarioBar()}
     <section class="einstellungen">
@@ -266,6 +308,7 @@ function renderScenario() {
       <h2>Gegner bei ${p.players} Spielern, Stufe ${p.level}</h2>
       ${groups || '<p class="leer">Keine Gegner hinterlegt.</p>'}
     </section>
+    ${schaden}
     <section>
       <button type="button" class="leise breit" data-act="raeume" aria-expanded="${local.showRooms}">${local.showRooms ? 'Raumaufteilung ausblenden' : 'Raumaufteilung zeigen (verrät spätere Räume)'}</button>
       ${rooms}
@@ -285,7 +328,7 @@ function renderCards() {
   const p = currentProfile();
   const lvl = profile().level;
   const all = local.poolFilter === 'alle';
-  const cards = all ? c.cards.filter((x) => x.level === 'X' || x.level <= lvl) : pool();
+  const cards = all ? c.cards.filter((x) => x.level === 'X' || x.level <= lvl).map((x) => applyEnhancements(x, enhList())) : pool();
   const scored = cards.map((card) => ({ card, s: scoreCard(card, p, condName) })).sort((a, b) => b.s.score - a.s.score);
   const extra = Math.max(0, lvl - 1);
   const have = owned().filter((id) => c.cards.some((x) => x.id === id && x.level !== 'X' && x.level <= lvl)).length;
@@ -375,19 +418,21 @@ function stepHtml(s) {
     const what = s.long
       ? `Lange Rast${s.n ? ` in Runde ${s.n}` : ''}: gib <b>${esc(s.lose.name)}</b> ab, heile 2 und frische Gegenstände auf.`
       : `Kurze Rast: die verlorene Karte ist Zufall. Am wenigsten weh tut <b>${esc(s.lose.name)}</b>. Trifft es eine wichtige Karte, lohnt sich oft 1 Schaden für einen neuen Zufall.`;
-    return `<li class="rast"><p>${what}</p><p class="hinweis">Danach ${s.handAfter} Karten auf der Hand.</p></li>`;
+    return `<li class="rast ${s.reserve ? 'reserve' : ''}"><p>${what}</p><p class="hinweis">Danach ${s.handAfter} Karten auf der Hand.</p></li>`;
   }
   const notes = [...s.notes];
   if (s.selfFed.length) notes.push(`${s.selfFed.map(elemName).join(', ')} erzeugst und verbrauchst du im selben Zug: erst die erzeugende Aktion ausführen.`);
   if (s.fed.length) notes.push(`Nutzt ${s.fed.map(elemName).join(', ')} aus der Vorrunde.`);
   if (s.hungry.length) notes.push(`Der Bonus braucht ${s.hungry.map(elemName).join(', ')} von einem Mitspieler.`);
   if (s.lost.length) notes.push(s.finale ? 'Letzte Runde: Verlustaktionen kosten jetzt nichts mehr.' : 'Verlustaktion eingeplant. Nur spielen, wenn sie hier wirklich viel bewirkt.');
+  const odds = s.odds.slice(0, 3).map((o) => `${esc(o.name)} in ${o.before} von ${o.of} Fällen`).join(', ');
   return `
-    <li class="runde">
-      <div class="runde-kopf"><span class="runde-nr">Runde ${s.n}</span><span class="runde-ini">Initiative ${s.lead}, ${s.beforeEnemies ? 'meist vor' : 'meist nach'} den Gegnern</span></div>
+    <li class="runde ${s.reserve ? 'reserve' : ''}">
+      <div class="runde-kopf"><span class="runde-nr">Runde ${s.n}</span><span class="runde-ini">Initiative ${s.lead}</span></div>
       ${actionHtml(s.top, 'oben')}
       ${actionHtml(s.bottom, 'unten')}
       <p class="hinweis">Führe mit der ${s.lead}: ${esc(s.leadWhy)}.${s.other !== s.lead ? ` Alternative: ${s.other}.` : ''}</p>
+      ${odds ? `<p class="quote">Damit bist du dran vor: ${odds}.</p>` : ''}
       ${notes.length ? `<ul class="gruende">${notes.map((n) => `<li class="neutral">${esc(n)}</li>`).join('')}</ul>` : ''}
     </li>`;
 }
@@ -396,6 +441,7 @@ function renderPlan() {
   if (!profile()) return needProfile('bekommst du einen Rundenplan für deine Hand');
   const c = character();
   const p = currentProfile();
+  const sz = scenario();
   const all = pool();
   const cards = all.filter((x) => currentHand().includes(x.id));
   if (cards.length !== c.handSize) {
@@ -403,35 +449,58 @@ function renderPlan() {
       <div class="knopfreihe"><button type="button" class="haupt" data-act="vorschlag-plan">Handvorschlag übernehmen und planen</button><button type="button" class="leise" data-go="hand">Hand selbst wählen</button></div></section>`;
     return;
   }
-  const plan = gamePlan(cards, p, { losses: local.losses, longRest: local.longRest, conditionName: condName });
+  const cal = calibration(state.shared.results);
+  const est = estimateRounds(p, sz, cal.factor);
+  const eigen = local.targets[sz.id] != null;
+  const target = eigen ? local.targets[sz.id] : est.rounds;
+  const plan = autoPlan(cards, p, { target, longRest: local.longRest, tank: !!profile().tank, conditionName: condName });
   const typ = { normal: 'normal', elite: 'Elite', boss: 'Boss' };
-  const enough = plan.damage >= plan.share;
+  const urteil = !plan.enough
+    ? `Deine Hand reicht auch ohne Verlustaktionen nur für ${plan.totalRounds} Runden. Für ${target} Runden brauchst du einen Ausdauertrank oder die Mitspieler müssen das Ende tragen.`
+    : `Eingeplant ${plan.lossesPlanned === 1 ? 'ist 1 Verlustaktion' : `sind ${plan.lossesPlanned} Verlustaktionen`}. Damit hält deine Hand ${plan.totalRounds} Runden, das ${plan.spare === 1 ? 'ist 1 Runde' : `sind ${plan.spare} Runden`} Reserve.`;
+  let trenner = false;
+  const schritte = plan.steps.map((s) => {
+    const first = s.reserve && !trenner;
+    if (first) trenner = true;
+    return (first ? '<li class="trenner">Ab hier Reserve, falls das Szenario länger dauert als geschätzt.</li>' : '') + stepHtml(s);
+  }).join('');
+  const inits = p.groups.map((g) => {
+    const d = p.deckTraits[g.id];
+    return d && d.inits ? `<li><b>${esc(g.name)}</b><span class="zahlenreihe">${d.inits.join(', ')}</span></li>` : '';
+  }).join('');
   view.innerHTML = `
     ${scenarioBar()}
     <section>
       <h2>Dein Plan für dieses Szenario</h2>
-      <div class="kennzahlen drei">
-        <div><b>${plan.rounds}</b><span>Runden bis zur Erschöpfung</span></div>
-        <div><b>${plan.damage}</b><span>Schaden laut Plan</span></div>
-        <div><b>${plan.share}</b><span>Gegnerleben pro Spieler</span></div>
+      <div class="kennzahlen vier">
+        <div><b>${plan.totalRounds}</b><span>Runden laut Plan</span></div>
+        <div><b>${plan.damage}</b><span>Schaden</span></div>
+        <div><b>${plan.share}</b><span>Gegnerleben je Spieler</span></div>
+        <div><b>${plan.xp}</b><span>EP aus Karten</span></div>
       </div>
-      <p class="${enough ? 'gut-text' : 'warn-text'}">${p.enemies === 0 ? 'Für dieses Szenario sind keine Gegner hinterlegt.' : enough
-        ? 'Rechnerisch schaffst du deinen Anteil. Unterstützungsaktionen für Mitspieler kommen noch dazu.'
-        : 'Rechnerisch bleibt dein Schaden unter deinem Anteil. Das ist für eine Unterstützerklasse normal, die Mitspieler müssen den Rest tragen.'}</p>
-      <p class="hinweis">Der Plan paart in jedem Rastzyklus die Karten so, dass der Gesamtwert für dieses Szenario am höchsten ist. Er kennt weder Positionen noch Monsterkarten. Nimm ihn als Reihenfolge-Vorschlag und weiche ab, wenn die Lage es verlangt.</p>
-      <label class="regler">Eingeplante Verlustaktionen: <output>${local.losses}</output>
-        <input type="range" min="0" max="6" value="${local.losses}" data-range="losses">
+      <p>${p.enemies === 0 ? 'Für dieses Szenario sind keine Gegner hinterlegt.' : urteil}</p>
+      <label class="regler">Das Szenario dauert etwa <output>${target}</output> Runden
+        <input type="range" min="6" max="30" value="${target}" data-range="target">
       </label>
+      <p class="hinweis">Schätzung der App: ${est.rounds} Runden${cal.n ? `, angepasst an ${cal.n} eingetragene Partien` : ''}. Je kürzer das Szenario, desto mehr Verlustaktionen plant sie früh ein. Unter „Notizen“ trägst du nach dem Abend die echte Rundenzahl ein.</p>
+      ${eigen ? '<div class="knopfreihe"><button type="button" class="leise" data-act="ziel-reset">Zurück zur Schätzung</button></div>' : ''}
       <label class="haken"><input type="checkbox" data-check="longRest" ${local.longRest ? 'checked' : ''}> Ich mache lange Rasten</label>
+      <label class="haken"><input type="checkbox" data-check="tank" ${profile().tank ? 'checked' : ''}> Ich will die Angriffe auf mich ziehen</label>
+      <p class="hinweis">Der Plan kennt weder Positionen noch die gezogenen Monsterkarten. Nimm ihn als Reihenfolge-Vorschlag und weiche ab, wenn die Lage es verlangt.</p>
     </section>
     ${plan.killOrder.length ? `<section>
       <h2>Wen zuerst angreifen</h2>
       <ol class="ziele">${plan.killOrder.map((k) => `<li><b>${esc(k.name)}</b> (${k.count}× ${typ[k.type]})<br><span class="hinweis">${esc(k.why.join(', '))}</span></li>`).join('')}</ol>
-      <p class="hinweis">Gegner handeln im Schnitt bei Initiative ${plan.enemyInit}.</p>
+    </section>` : ''}
+    ${inits ? `<section>
+      <h2>Wann die Gegner dran sind</h2>
+      <ul class="initiativen">${inits}</ul>
+      <p class="hinweis">Das sind die Initiativen der acht Karten je Monsterdeck. Bei Gleichstand bist du vor dem Monster dran.</p>
+      <p class="hinweis">Fokus-Regel: Ein Monster greift an, wen es mit der wenigsten Bewegung erreicht. Bei Gleichstand den Näheren, danach den mit der früheren Initiative. Wer Angriffe auf sich ziehen will, steht vorn und geht früh.</p>
     </section>` : ''}
     <section>
       <h2>Runde für Runde</h2>
-      <ol class="plan">${plan.steps.map(stepHtml).join('')}</ol>
+      <ol class="plan">${schritte}</ol>
     </section>`;
 }
 
@@ -441,6 +510,8 @@ function renderNotes() {
   const s = scenario();
   const notes = state.shared.notes || {};
   const others = Object.entries(notes).filter(([id, t]) => t && Number(id) !== s.id).sort((a, b) => a[0] - b[0]);
+  const res = (state.shared.results || {})[s.id];
+  const cal = calibration(state.shared.results);
   view.innerHTML = `
     ${scenarioBar()}
     <section>
@@ -449,6 +520,20 @@ function renderNotes() {
         <textarea id="notiz" rows="8" placeholder="Was hat funktioniert, was nicht? Beim nächsten Versuch seht ihr es hier wieder.">${esc(notes[s.id] || '')}</textarea>
       </label>
       <p class="hinweis">Notizen gelten für die ganze Gruppe und liegen auf eurem Server.</p>
+    </section>
+    <section>
+      <h2>Wie lief es?</h2>
+      <div class="rechner">
+        <label for="ergRunden">Gespielte Runden</label>
+        <input id="ergRunden" type="number" inputmode="numeric" min="1" max="60" placeholder="Runden" value="${res ? res.rounds : ''}">
+      </div>
+      <div class="knopfreihe">
+        <button type="button" class="haupt" data-act="erg" data-won="1">Gewonnen eintragen</button>
+        <button type="button" class="leise" data-act="erg" data-won="0">Verloren eintragen</button>
+        ${res ? '<button type="button" class="leise" data-act="erg-weg">Eintrag löschen</button>' : ''}
+      </div>
+      ${res ? `<p class="gut-text">Eingetragen: ${res.rounds} Runden, ${res.won ? 'gewonnen' : 'verloren'}.</p>` : ''}
+      <p class="hinweis">Aus gewonnenen Partien lernt die App, wie lange eure Szenarien wirklich dauern, und plant die Verlustkarten danach.${cal.n ? ` Bisher ${cal.n} Partien: ihr braucht ${Math.round(cal.factor * 100)} % der geschätzten Runden.` : ''}</p>
     </section>
     ${others.length ? `<section><h2>Weitere Notizen</h2>${others.map(([id, t]) => `<article class="notiz"><button type="button" class="leise" data-act="szen" data-id="${id}">Szenario ${id}</button><p>${esc(t)}</p></article>`).join('')}</section>` : ''}
     ${updatesHtml()}`;
@@ -529,8 +614,18 @@ async function askUpdate(aktion) {
 
 function render() {
   renderHeader();
+  if (local.tab === 'held' && !profile()) local.tab = 'szenario';
+  if (local.tab === 'held') return renderHeld(heldCtx);
   ({ szenario: renderScenario, karten: renderCards, hand: renderHand, plan: renderPlan, notizen: renderNotes })[local.tab]();
 }
+
+// Was der Charakterbildschirm (held.js) von hier braucht
+const heldCtx = {
+  get data() { return data; },
+  get state() { return state; },
+  local, view, esc, seg, halfHtml, condName, elemName, setStatus,
+  profile, character, owned, pool, currentProfile, saveProfile, saveShared, render,
+};
 
 function setScenario(id) {
   const ids = data.scenarios.map((s) => s.id);
@@ -553,6 +648,7 @@ view.addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.go) { local.tab = b.dataset.go; render(); window.scrollTo(0, 0); return; }
+  if (local.tab === 'held' && heldClick(heldCtx, b)) return;
   if (b.dataset.set) {
     const val = b.dataset.val;
     if (b.dataset.set === 'poolFilter') local.poolFilter = val;
@@ -605,14 +701,32 @@ view.addEventListener('click', (e) => {
     return render();
   }
   if (act === 'leeren') { profile().hands[handKey()] = []; saveProfile(); return render(); }
+  if (act === 'ziel-reset') { delete local.targets[local.scenario]; return render(); }
+  if (act === 'erg' || act === 'erg-weg') {
+    const results = (state.shared.results ||= {});
+    if (act === 'erg-weg') delete results[local.scenario];
+    else {
+      const rounds = Math.round(Number($('#ergRunden').value));
+      if (!(rounds > 0)) return setStatus('Bitte erst die Rundenzahl eintragen.', true);
+      const p = currentProfile();
+      results[local.scenario] = { rounds, won: b.dataset.won === '1', est: estimateRounds(p, scenario()).base, players: p.players, level: p.level };
+    }
+    saveShared();
+    return render();
+  }
 });
 
 view.addEventListener('change', (e) => {
   if (e.target.id === 'szenNr') setScenario(e.target.value);
+  if (local.tab === 'held' && heldChange(heldCtx, e.target)) return;
   if (e.target.dataset.check === 'longRest') { local.longRest = e.target.checked; render(); }
+  if (e.target.dataset.check === 'tank') { profile().tank = e.target.checked; saveProfile(); render(); }
+  if (e.target.dataset.range === 'target') { local.targets[local.scenario] = Number(e.target.value); render(); }
   if (e.target.dataset.range === 'losses') { local.losses = Number(e.target.value); render(); }
 });
 view.addEventListener('input', (e) => {
+  if (local.tab === 'held' && heldInput(heldCtx, e.target)) return;
+  if (e.target.dataset.range === 'target') e.target.previousElementSibling.textContent = e.target.value;
   if (e.target.id === 'notiz') {
     (state.shared.notes ||= {})[local.scenario] = e.target.value;
     saveShared();

@@ -114,3 +114,130 @@ test('Zielreihenfolge stellt Bosse ans Ende', { skip: !withData }, () => {
   assert.ok(order.length >= 2);
   assert.equal(order[order.length - 1].type, 'boss');
 });
+
+// ---------- Szenariolänge, Initiative, Schaden ----------
+import { autoPlan, estimateRounds, calibration, initiativeOdds, incomingDamage, xpProgress, xpLevel, levelUpAdvice, enhancementCost, slotStickers, applyEnhancements, enhancementAdvice, scoreItem, shopAdvice } from '../public/logic.js';
+
+const sunHand = (scenarioId) => {
+  const sun = data.characters.find((c) => c.id === 'sun');
+  const scen = data.scenarios.find((x) => x.id === scenarioId);
+  const profile = scenarioProfile(data, scen, 4, 1);
+  const pool = cardPool(sun, 1, []);
+  const { hand } = suggestHand(pool, profile, sun.handSize);
+  return { sun, scen, profile, pool, cards: pool.filter((c) => hand.includes(c.id)) };
+};
+
+test('Szenariolänge liegt im üblichen Bereich und lernt aus Partien', { skip: !withData }, () => {
+  for (const s of data.scenarios) {
+    const r = estimateRounds(scenarioProfile(data, s, 4, 2), s).rounds;
+    assert.ok(r >= 6 && r <= 30, `Szenario ${s.id}: ${r}`);
+  }
+  assert.deepEqual(calibration({}), { factor: 1, n: 0 });
+  const cal = calibration({ 1: { rounds: 18, est: 12, won: true }, 2: { rounds: 12, est: 12, won: true }, 3: { rounds: 15, est: 12, won: true }, 4: { rounds: 40, est: 10, won: false } });
+  assert.equal(cal.n, 3); // die Niederlage zählt nicht
+  assert.equal(cal.factor, 1.25);
+});
+
+test('Kurze Szenarien bekommen mehr Verlustaktionen als lange', { skip: !withData }, () => {
+  const { cards, profile } = sunHand(1);
+  const kurz = autoPlan(cards, profile, { target: 10 });
+  const lang = autoPlan(cards, profile, { target: 26 });
+  assert.ok(kurz.lossesPlanned > lang.lossesPlanned);
+  assert.ok(kurz.totalRounds >= 12, 'zwei Runden Reserve über dem Ziel');
+  assert.ok(lang.totalRounds >= 28);
+  assert.ok(kurz.steps.some((s) => s.reserve));
+  // zu langes Ziel: der Plan sagt ehrlich, dass die Hand nicht reicht
+  assert.equal(autoPlan(cards, profile, { target: 40 }).enough, false);
+});
+
+test('Initiative-Quoten zählen die Karten des Monsterdecks', { skip: !withData }, () => {
+  const { profile } = sunHand(1);
+  const archers = initiativeOdds(profile, 23).find((o) => o.id === 'bandit-archer');
+  assert.equal(archers.of, 8);
+  assert.equal(archers.before, 6); // nur die 14 und die 16 sind schneller
+  assert.equal(initiativeOdds(profile, 1).find((o) => o.id === 'bandit-archer').before, 8);
+  assert.equal(initiativeOdds(profile, 99).find((o) => o.id === 'bandit-archer').before, 0);
+});
+
+test('Mehr Schild lässt weniger Schaden durch', { skip: !withData }, () => {
+  const { profile } = sunHand(1);
+  const inc = incomingDamage(data, profile);
+  for (const r of inc.rows) for (let i = 1; i < r.per.length; i++) assert.ok(r.per[i] <= r.per[i - 1]);
+  assert.ok(inc.total[0] > inc.total[1] && inc.total[1] > inc.total[2]);
+  // Banditen-Wache normal auf Stufe 1: Angriff 2, im Schnitt knapp darunter (eine Karte ohne Angriff)
+  const guard = inc.rows.find((r) => r.id === 'bandit-guard' && r.type === 'normal');
+  assert.ok(guard.per[0] > 1.5 && guard.per[0] <= 2.2);
+});
+
+// ---------- Charakter ----------
+
+test('Erfahrungsbalken rechnet innerhalb der Stufe', () => {
+  assert.deepEqual(xpProgress(128, 3), { from: 95, to: 150, ratio: 0.6, missing: 22, ready: false });
+  assert.equal(xpProgress(150, 3).ready, true);
+  assert.equal(xpProgress(40, 3).ratio, 0);
+  assert.equal(xpProgress(999, 9).to, null);
+  assert.equal(xpLevel(0), 1);
+  assert.equal(xpLevel(45), 2);
+  assert.equal(xpLevel(499), 8);
+  assert.equal(xpLevel(500), 9);
+});
+
+test('Aufstiegsberater vergleicht die Karten der nächsten Stufe', { skip: !withData }, () => {
+  const sun = data.characters.find((c) => c.id === 'sun');
+  const rat = levelUpAdvice(data, sun, 1, []);
+  assert.equal(rat.next, 2);
+  assert.equal(rat.xpNeeded, 45);
+  assert.deepEqual(rat.candidates.map((c) => c.card.id).sort(), [189, 190]);
+  assert.ok(rat.candidates.every((c) => c.isNew && c.rate >= 0 && c.rate <= 1));
+  // auf Stufe 3 steht die auf Stufe 2 ausgelassene Karte weiter zur Wahl
+  const spaeter = levelUpAdvice(data, sun, 2, [189]);
+  assert.ok(spaeter.candidates.some((c) => c.card.id === 190 && !c.isNew));
+  assert.equal(levelUpAdvice(data, sun, 9, []), null);
+});
+
+test('Verbesserungskosten folgen dem Regelheft', { skip: !withData }, () => {
+  const sun = data.characters.find((c) => c.id === 'sun');
+  const stance = sun.cards.find((c) => c.id === 184); // Stufe 1
+  const slot = stance.bottom.slots[0];
+  assert.equal(slot.on, 'shield');
+  assert.equal(enhancementCost('plus1', slot, stance, 0), 100);
+  assert.equal(enhancementCost('plus1', slot, stance, 1), 175); // schon eine Verbesserung auf der Aktion
+  assert.equal(enhancementCost('plus1', slot, { ...stance, level: 4 }, 0), 175); // +25 je Stufe über 1
+  assert.equal(enhancementCost('plus1', { ...slot, multi: true }, stance, 0), 200);
+  assert.equal(enhancementCost('bless', slot, stance, 0), 50);
+  assert.equal(enhancementCost('el:light', slot, stance, 0), 100);
+  assert.equal(enhancementCost('hex', { on: 'area', shape: 'hex', hexes: 3, multi: true }, stance, 0), 67);
+  assert.equal(enhancementCost('plus1', { on: 'target', shape: 'circle', multi: true }, stance, 0), 50); // Ziel +1 wird nie verdoppelt
+  // Raute mit Plus: +1, positive Zustände und Elemente, aber keine negativen Zustände
+  const stickers = slotStickers(slot, stance.bottom);
+  assert.ok(stickers.includes('plus1') && stickers.includes('bless') && stickers.includes('el:light'));
+  assert.ok(!stickers.includes('wound'));
+  assert.deepEqual(slotStickers({ on: 'range', shape: 'square' }, stance.top), ['plus1']);
+
+  const besser = applyEnhancements(stance, [{ card: 184, side: 'bottom', slot: 0, sticker: 'plus1' }]);
+  assert.equal(besser.bottom.shield, stance.bottom.shield + 1);
+  assert.equal(stance.bottom.enh, undefined, 'die Originalkarte bleibt unverändert');
+  assert.equal(applyEnhancements(stance, []), stance);
+
+  const pool = cardPool(sun, 1, []);
+  const top = enhancementAdvice(pool, [], 0)[0];
+  assert.equal(top.card.id, 184);
+  assert.equal(top.sticker, 'plus1');
+});
+
+test('Gegenstände sind importiert und werden passend bewertet', { skip: !withData }, () => {
+  assert.equal(data.items.length, 150);
+  const trank = data.items.find((i) => i.id === 13);
+  assert.equal(trank.tags.stamina, 2);
+  assert.equal(trank.slot, 'small');
+  assert.ok(trank.img.endsWith('gh-013-minor-stamina-potion.png'));
+  const { profile, pool } = sunHand(1);
+  const laden = shopAdvice(data, profile, { gold: 30, prosperity: 1, cards: pool });
+  assert.equal(laden.length, 14);
+  assert.equal(laden[0].item.id, 13);
+  assert.ok(laden.every((x) => x.item.prosperity === 1));
+  assert.equal(shopAdvice(data, profile, { gold: 30, prosperity: 1, owned: [13], cards: pool }).some((x) => x.item.id === 13), false);
+  // Der Bogen wirkt nur bei Fernangriffen, davon hat die Sonnenhüterin auf Stufe 1 kaum welche
+  const bogen = data.items.find((i) => i.id === 9);
+  assert.ok(scoreItem(bogen, profile, undefined, { melee: 6, ranged: 0 }).score < scoreItem(bogen, profile, undefined, { melee: 0, ranged: 6 }).score);
+});
