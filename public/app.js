@@ -1,4 +1,4 @@
-import { scenarioProfile, cardPool, scoreCard, suggestHand, handStats, stamina } from './logic.js';
+import { scenarioProfile, cardPool, scoreCard, suggestHand, handStats, stamina, gamePlan } from './logic.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -18,7 +18,7 @@ const local = {
   scenario: Number(localStorage.getItem('gp.szenario')) || 1,
   showRooms: false,
   poolFilter: 'vorrat',
-  losses: 1,
+  losses: 2,
   longRest: false,
 };
 
@@ -359,6 +359,82 @@ function renderHand() {
     </section>`;
 }
 
+// ---------- Reiter: Plan ----------
+
+function actionHtml(x, where) {
+  const h = x.card[x.side];
+  const text = x.basic
+    ? (x.side === 'top' ? 'als Standardangriff: Angriff 2' : 'als Standardbewegung: Bewegung 2')
+    : (h.text.length ? h.text.map(esc).join(' · ') : 'Aktion der Karte');
+  const loss = !x.basic && h.lost ? ' <span class="marke verlust">Verlust</span>' : '';
+  return `<p class="zug"><span class="haelfte-name">${where}</span><span><b>${esc(x.card.name)}</b> <span class="zug-ini">${x.card.initiative}</span><br>${text}${loss}</span></p>`;
+}
+
+function stepHtml(s) {
+  if (s.type === 'rest') {
+    const what = s.long
+      ? `Lange Rast${s.n ? ` in Runde ${s.n}` : ''}: gib <b>${esc(s.lose.name)}</b> ab, heile 2 und frische Gegenstände auf.`
+      : `Kurze Rast: die verlorene Karte ist Zufall. Am wenigsten weh tut <b>${esc(s.lose.name)}</b>. Trifft es eine wichtige Karte, lohnt sich oft 1 Schaden für einen neuen Zufall.`;
+    return `<li class="rast"><p>${what}</p><p class="hinweis">Danach ${s.handAfter} Karten auf der Hand.</p></li>`;
+  }
+  const notes = [...s.notes];
+  if (s.selfFed.length) notes.push(`${s.selfFed.map(elemName).join(', ')} erzeugst und verbrauchst du im selben Zug: erst die erzeugende Aktion ausführen.`);
+  if (s.fed.length) notes.push(`Nutzt ${s.fed.map(elemName).join(', ')} aus der Vorrunde.`);
+  if (s.hungry.length) notes.push(`Der Bonus braucht ${s.hungry.map(elemName).join(', ')} von einem Mitspieler.`);
+  if (s.lost.length) notes.push(s.finale ? 'Letzte Runde: Verlustaktionen kosten jetzt nichts mehr.' : 'Verlustaktion eingeplant. Nur spielen, wenn sie hier wirklich viel bewirkt.');
+  return `
+    <li class="runde">
+      <div class="runde-kopf"><span class="runde-nr">Runde ${s.n}</span><span class="runde-ini">Initiative ${s.lead}, ${s.beforeEnemies ? 'meist vor' : 'meist nach'} den Gegnern</span></div>
+      ${actionHtml(s.top, 'oben')}
+      ${actionHtml(s.bottom, 'unten')}
+      <p class="hinweis">Führe mit der ${s.lead}: ${esc(s.leadWhy)}.${s.other !== s.lead ? ` Alternative: ${s.other}.` : ''}</p>
+      ${notes.length ? `<ul class="gruende">${notes.map((n) => `<li class="neutral">${esc(n)}</li>`).join('')}</ul>` : ''}
+    </li>`;
+}
+
+function renderPlan() {
+  if (!profile()) return needProfile('bekommst du einen Rundenplan für deine Hand');
+  const c = character();
+  const p = currentProfile();
+  const all = pool();
+  const cards = all.filter((x) => currentHand().includes(x.id));
+  if (cards.length !== c.handSize) {
+    view.innerHTML = `${scenarioBar()}<section class="leer-seite"><h2>Erst die Hand festlegen</h2><p>Der Plan braucht genau ${c.handSize} Handkarten, gewählt sind ${cards.length}.</p>
+      <div class="knopfreihe"><button type="button" class="haupt" data-act="vorschlag-plan">Handvorschlag übernehmen und planen</button><button type="button" class="leise" data-go="hand">Hand selbst wählen</button></div></section>`;
+    return;
+  }
+  const plan = gamePlan(cards, p, { losses: local.losses, longRest: local.longRest, conditionName: condName });
+  const typ = { normal: 'normal', elite: 'Elite', boss: 'Boss' };
+  const enough = plan.damage >= plan.share;
+  view.innerHTML = `
+    ${scenarioBar()}
+    <section>
+      <h2>Dein Plan für dieses Szenario</h2>
+      <div class="kennzahlen drei">
+        <div><b>${plan.rounds}</b><span>Runden bis zur Erschöpfung</span></div>
+        <div><b>${plan.damage}</b><span>Schaden laut Plan</span></div>
+        <div><b>${plan.share}</b><span>Gegnerleben pro Spieler</span></div>
+      </div>
+      <p class="${enough ? 'gut-text' : 'warn-text'}">${p.enemies === 0 ? 'Für dieses Szenario sind keine Gegner hinterlegt.' : enough
+        ? 'Rechnerisch schaffst du deinen Anteil. Unterstützungsaktionen für Mitspieler kommen noch dazu.'
+        : 'Rechnerisch bleibt dein Schaden unter deinem Anteil. Das ist für eine Unterstützerklasse normal, die Mitspieler müssen den Rest tragen.'}</p>
+      <p class="hinweis">Der Plan paart in jedem Rastzyklus die Karten so, dass der Gesamtwert für dieses Szenario am höchsten ist. Er kennt weder Positionen noch Monsterkarten. Nimm ihn als Reihenfolge-Vorschlag und weiche ab, wenn die Lage es verlangt.</p>
+      <label class="regler">Eingeplante Verlustaktionen: <output>${local.losses}</output>
+        <input type="range" min="0" max="6" value="${local.losses}" data-range="losses">
+      </label>
+      <label class="haken"><input type="checkbox" data-check="longRest" ${local.longRest ? 'checked' : ''}> Ich mache lange Rasten</label>
+    </section>
+    ${plan.killOrder.length ? `<section>
+      <h2>Wen zuerst angreifen</h2>
+      <ol class="ziele">${plan.killOrder.map((k) => `<li><b>${esc(k.name)}</b> (${k.count}× ${typ[k.type]})<br><span class="hinweis">${esc(k.why.join(', '))}</span></li>`).join('')}</ol>
+      <p class="hinweis">Gegner handeln im Schnitt bei Initiative ${plan.enemyInit}.</p>
+    </section>` : ''}
+    <section>
+      <h2>Runde für Runde</h2>
+      <ol class="plan">${plan.steps.map(stepHtml).join('')}</ol>
+    </section>`;
+}
+
 // ---------- Reiter: Notizen ----------
 
 function renderNotes() {
@@ -453,7 +529,7 @@ async function askUpdate(aktion) {
 
 function render() {
   renderHeader();
-  ({ szenario: renderScenario, karten: renderCards, hand: renderHand, notizen: renderNotes })[local.tab]();
+  ({ szenario: renderScenario, karten: renderCards, hand: renderHand, plan: renderPlan, notizen: renderNotes })[local.tab]();
 }
 
 function setScenario(id) {
@@ -520,6 +596,11 @@ view.addEventListener('click', (e) => {
   if (act === 'vorschlag') {
     const res = suggestHand(pool(), currentProfile(), character().handSize, { conditionName: condName });
     profile().hands[handKey()] = res.hand;
+    saveProfile();
+    return render();
+  }
+  if (act === 'vorschlag-plan') {
+    profile().hands[handKey()] = suggestHand(pool(), currentProfile(), character().handSize, { conditionName: condName }).hand;
     saveProfile();
     return render();
   }

@@ -5,6 +5,7 @@ Vorbereitungshilfe für das Brettspiel Gloomhaven. Die App ersetzt nichts am Tis
 - **Szenario**: Welche Gegner kommen bei eurer Spielerzahl und Szenariostufe, mit welchen Werten, und worauf kommt es an (Schild, Vergeltung, Fernkämpfer, Zustände, Boss-Immunitäten).
 - **Karten**: Dein Kartenvorrat, sortiert nach Nutzen für genau dieses Szenario, mit Begründung zu jeder Karte.
 - **Hand**: Handvorschlag, Initiative-Übersicht, Element-Bilanz, Warnungen (zu wenig Bewegung usw.) und Ausdauer-Rechner.
+- **Plan**: Rundenplan für deine Hand bis zur Erschöpfung: welche zwei Karten pro Runde (oben/unten), mit welcher Initiative, wann rasten und welche Karte abgeben, wen zuerst angreifen.
 - **Notizen**: Gemeinsame Notizen pro Szenario für die ganze Gruppe.
 
 Jeder Spieler legt ein eigenes Profil an (Name, Klasse, Stufe). Freischaltbare Klassen stehen nur mit ihrem Symbol in der Auswahl.
@@ -60,6 +61,7 @@ npm start                       # http://localhost:8090
 
 ## Grenzen
 
+- Der Plan kennt weder Positionen noch Monsterkarten oder die Züge der Mitspieler. Er ist ein Reihenfolge-Vorschlag, kein Zugzwang.
 - Die Bewertung besteht aus Faustregeln, keine Simulation. Sie zeigt ihre Gründe an, damit ihr sie einschätzen könnt. Karten mit reinem Sondertext kann sie nicht ausrechnen.
 - Kartennamen der freischaltbaren Klassen sind englisch, weil GHS dafür keine deutsche Übersetzung enthält. Kartennummer und Initiative stimmen mit den gedruckten Karten überein. Die Sondertexte der Sonnenhüterin sind selbst übersetzt (`scripts/uebersetzungen/de.json`), der Wortlaut kann von den gedruckten Karten abweichen. Bei den anderen freischaltbaren Klassen sind sie noch englisch.
 - Sonderregeln der Szenarien (Ziele, Fallen, nachrückende Gegner) sind nicht berücksichtigt, nur die Gegner aus der Aufstellung.

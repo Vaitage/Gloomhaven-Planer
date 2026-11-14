@@ -22,6 +22,9 @@ Gloomhaven-Planer: Web-App zur Szenario-Vorbereitung und Handplanung, läuft als
 ## Update-Dienst
 App und Dienst sprechen nur über `data/update/anfrage` (schreibt die App: `pruefen` oder `aktualisieren`) und `data/update/status.json` (schreibt `tools/pi/selbst-aktualisieren.sh`). Der Ablauf des Dienstes wurde mit nachgestelltem Git-Remote und Docker getestet (Erfolg, fehlgeschlagener Build mit Rückfall, ungültige Anfrage), auf einem echten Pi noch nicht.
 
+## Spielplan
+`gamePlan()` in `public/logic.js` spielt die Hand durch: pro Rastzyklus die wertvollste Paarung der Handkarten (exakt über Teilmengen), Reihenfolge nach Aufbau und Elementen, Verlustaktionen nach Budget (Aufbau im ersten Zyklus, Rest spät, letzte Runde frei), beim Rasten geht die schwächste Karte. Bewertet wird mit `scoreHalf()`, neue Regeln gehören dorthin.
+
 ## Offene Ideen
 - Angriffsmodifikator-Deck mit Perks (Daten stehen in GHS unter `character/<klasse>.json`).
 - Gegenstände und Verbesserungen.

@@ -179,6 +179,7 @@ function crowdCap(p) {
 
 export function scoreHalf(half, p, cn = (c) => c) {
   let v = 0;
+  let dmg = 0;
   const why = [];
   const add = (text, good = true) => { if (!why.some((w) => w.text === text)) why.push({ text, good }); };
 
@@ -190,6 +191,7 @@ export function scoreHalf(half, p, cn = (c) => c) {
     const raw = half.attacks.reduce((a, b) => a + b, 0);
     const after = half.attacks.reduce((a, b) => a + Math.max(0, b - shield), 0);
     v += after * eff;
+    dmg = after * eff;
     if (p.shieldShare >= 0.25) {
       if (half.pierce) add('Durchbohren hilft gegen Schild');
       else if (raw && after / raw < 0.7) add('Schild schluckt viel von diesem Angriff', false);
@@ -259,7 +261,7 @@ export function scoreHalf(half, p, cn = (c) => c) {
   const countable = half.attacks.length || half.conditions.length || half.move || half.heal || half.shield || half.retaliate || half.loot || half.summon;
   if (!countable && half.text.length) { v += 3; add('Sondereffekt, bitte selbst einschätzen'); }
 
-  return { value: Math.max(0, v), why };
+  return { value: Math.max(0, v), why, dmg };
 }
 
 export function scoreCard(card, profile, cn) {
@@ -397,4 +399,205 @@ export function stamina(handSize, lossesPlayed = 0, longRest = false) {
   }
   if (inCycle) cycles.push(inCycle);
   return { rounds: played, rests, total: played + (longRest ? rests : 0), cycles };
+}
+
+// ---------- Spielplan ----------
+
+// Jede Karte lässt sich statt ihrer Aktion auch als Standardaktion spielen:
+// oben Angriff 2, unten Bewegung 2.
+const BASIC = { top: { attacks: [2], move: 0 }, bottom: { attacks: [], move: 2 } };
+
+// Zielreihenfolge: gefährlich und schnell zu töten kommt zuerst.
+export function killOrder(profile) {
+  const rows = [];
+  for (const g of profile.groups) {
+    for (const t of g.types) {
+      const s = t.stats;
+      const threat = s.attack * s.targets * (s.range ? 1.25 : 1) + s.conditions.length + (s.retaliate ? 0.5 : 0);
+      const tough = s.hp + s.shield * 3;
+      const why = [];
+      if (g.boss) why.push('Boss, hält am längsten durch');
+      if (s.range) why.push('greift aus der Ferne an');
+      if (s.targets > 1) why.push(`trifft ${s.targets} Ziele`);
+      if (s.conditions.length) why.push('verteilt Zustände');
+      if (s.shield) why.push(`Schild ${s.shield}, nur mit starken Treffern lohnend`);
+      if (s.retaliate) why.push(`Vergeltung ${s.retaliate}, besser aus der Ferne`);
+      if (!why.length) why.push(tough <= 6 ? 'fällt schnell' : 'viel Leben, wenig Besonderes');
+      rows.push({ id: g.id, name: g.name, type: g.boss ? 'boss' : t.type, count: t.count, priority: g.boss ? -1 : threat / Math.max(1, tough), why });
+    }
+  }
+  return rows.sort((a, b) => b.priority - a.priority);
+}
+
+// Mittlere Initiative der Gegner, gewichtet nach Anzahl
+export function enemyInitiative(profile) {
+  let sum = 0;
+  let n = 0;
+  for (const g of profile.groups) {
+    const d = profile.deckTraits[g.id];
+    if (!d) continue;
+    const count = g.types.reduce((a, t) => a + t.count, 0);
+    sum += d.initAvg * count; n += count;
+  }
+  return n ? Math.round(sum / n) : 50;
+}
+
+const isSetup = (h) => h.persistent || h.summon;
+const melee = (h) => h.attacks.length > 0 && !h.ranged;
+
+// Bewertet, Karte a oben und Karte b unten in einer Runde zu spielen.
+// "enabled" enthält die Verlusthälften, die in diesem Zyklus gespielt werden dürfen.
+function pairOption(a, b, val, enabled, basicAttack) {
+  const pick = (card, side) => {
+    const h = card[side];
+    const usable = !h.lost || enabled.has(`${card.id}:${side}`);
+    const real = usable ? val[card.id][side] : null;
+    const basicValue = side === 'top' ? basicAttack : 1.1;
+    if (real && real.value >= basicValue) return { card, side, half: h, value: real.value, dmg: real.dmg, basic: false };
+    return { card, side, half: BASIC[side], value: basicValue, dmg: side === 'top' ? basicAttack : 0, basic: true };
+  };
+  const top = pick(a, 'top');
+  const bottom = pick(b, 'bottom');
+  let value = top.value + bottom.value;
+  const notes = [];
+  const th = top.half;
+  const bh = bottom.half;
+  const moves = (th.move || 0) + (bh.move || 0);
+  if (!moves && (melee(th) || melee(bh)) ) { value -= 1; notes.push('Ohne Bewegung: nur spielen, wenn ein Gegner neben dir steht.'); }
+  if (moves >= 3 && (melee(th) || melee(bh))) value += 0.5;
+  const gen = [...(th.gen || []), ...(bh.gen || [])];
+  const use = [...(th.use || []), ...(bh.use || [])].filter((e) => e !== 'wild');
+  const self = use.filter((e) => gen.includes(e));
+  if (self.length) { value += 1.5; }
+  return { top, bottom, value, notes, gen, use, selfFed: self };
+}
+
+// Beste Aufteilung der Handkarten in Zweierpaare (exakt, über alle Teilmengen).
+function bestPairing(cards, val, enabled, basicAttack) {
+  const n = cards.length;
+  const opt = (i, j) => {
+    const x = pairOption(cards[i], cards[j], val, enabled, basicAttack);
+    const y = pairOption(cards[j], cards[i], val, enabled, basicAttack);
+    return x.value >= y.value ? x : y;
+  };
+  const memo = new Map();
+  const solve = (mask, skipLeft) => {
+    if (mask === 0) return { value: 0, pairs: [], left: [] };
+    const key = mask * 2 + (skipLeft ? 1 : 0);
+    if (memo.has(key)) return memo.get(key);
+    let i = 0;
+    while (!(mask & (1 << i))) i++;
+    let best = null;
+    if (skipLeft) { // bei ungerader Kartenzahl bleibt genau eine Karte auf der Hand
+      const r = solve(mask & ~(1 << i), false);
+      best = { value: r.value, pairs: r.pairs, left: [cards[i], ...r.left] };
+    }
+    for (let j = i + 1; j < n; j++) {
+      if (!(mask & (1 << j))) continue;
+      const o = opt(i, j);
+      const r = solve(mask & ~(1 << i) & ~(1 << j), skipLeft);
+      if (!best || o.value + r.value > best.value) best = { value: o.value + r.value, pairs: [o, ...r.pairs], left: r.left };
+    }
+    memo.set(key, best);
+    return best;
+  };
+  return solve((1 << n) - 1, n % 2 === 1);
+}
+
+// Reihenfolge der Runden im Zyklus: Aufbau zuerst, Elemente erst erzeugen, dann verbrauchen.
+function orderRounds(pairs, carried) {
+  const rest = [...pairs];
+  const out = [];
+  let avail = new Set(carried);
+  const needs = (p) => p.use.filter((e) => !p.selfFed.includes(e));
+  const take = (i) => { const [p] = rest.splice(i, 1); p.fed = needs(p).filter((e) => avail.has(e)); p.hungry = needs(p).filter((e) => !avail.has(e)); out.push(p); avail = new Set(p.gen); };
+  while (rest.length) {
+    let i = rest.findIndex((p) => isSetup(p.top.half) || isSetup(p.bottom.half));
+    if (i < 0) i = rest.findIndex((p) => needs(p).length && needs(p).every((e) => avail.has(e)));
+    if (i < 0) {
+      const wanted = new Set(rest.flatMap(needs));
+      i = rest.findIndex((p) => p.gen.some((e) => wanted.has(e)) && !needs(p).length);
+    }
+    if (i < 0) i = rest.reduce((b, p, k) => (p.value > rest[b].value ? k : b), 0);
+    take(i);
+  }
+  return { rounds: out, carried: [...avail] };
+}
+
+// Spielt die Hand komplett durch und liefert einen Rundenplan.
+// opts.losses: wie viele Verlustaktionen eingeplant werden dürfen
+// opts.longRest: lange Rasten (Karte frei wählbar, kostet eine Runde)
+export function gamePlan(cards, profile, opts = {}) {
+  const cn = opts.conditionName;
+  let budget = opts.losses ?? 2;
+  const longRest = !!opts.longRest;
+  const val = {};
+  for (const c of cards) val[c.id] = { top: scoreHalf(c.top, profile, cn), bottom: scoreHalf(c.bottom, profile, cn), card: scoreCard(c, profile, cn).score };
+  const basicAttack = Math.max(0, 2 - profile.shieldAvg);
+  const enemyInit = enemyInitiative(profile);
+  const lossHalves = (pool) => pool.flatMap((c) => ['top', 'bottom'].filter((s) => c[s].lost).map((s) => ({ key: `${c.id}:${s}`, card: c, side: s, value: val[c.id][s].value, setup: isSetup(c[s]) })));
+
+  let hand = [...cards];
+  let discard = [];
+  const steps = [];
+  let round = 0;
+  let cycle = 0;
+  let carried = [];
+  let damage = 0;
+  const lostPlayed = [];
+
+  for (let guard = 0; guard < 60 && hand.length >= 2; guard++) {
+    // Welche Verlustaktionen sind in diesem Zyklus freigegeben?
+    const enabled = new Set();
+    const candidates = lossHalves(hand).sort((a, b) => b.value - a.value);
+    let free = budget;
+    if (cycle === 0) for (const c of candidates.filter((x) => x.setup).slice(0, Math.min(2, free))) { enabled.add(c.key); free--; }
+    if (hand.length <= 6 && free > 0) { const c = candidates.find((x) => !x.setup && !enabled.has(x.key)); if (c) enabled.add(c.key); }
+    // Letzte Runde vor der Erschöpfung: Verlustaktionen kosten nichts mehr
+    if (hand.length === 2) for (const c of candidates) enabled.add(c.key);
+
+    const pairing = bestPairing(hand, val, enabled, basicAttack);
+    const ordered = orderRounds(pairing.pairs, carried);
+    carried = ordered.carried;
+    for (const p of ordered.rounds) {
+      round++;
+      const inis = [p.top.card.initiative, p.bottom.card.initiative].sort((a, b) => a - b);
+      const halves = [p.top.half, p.bottom.half];
+      const protect = halves.some((h) => (h.conditions || []).some((c) => ['stun', 'disarm', 'immobilize'].includes(c)) || h.heal || h.shield);
+      const waitForThem = !protect && halves.some(melee) && !halves.some((h) => h.move >= 3) && profile.rangedShare < 0.5;
+      const lead = waitForThem ? inis[1] : inis[0];
+      const leadWhy = waitForThem ? 'spät gehen und die Gegner herankommen lassen' : protect ? 'früh gehen, damit Schutz und Kontrolle vor den Gegnern wirken' : 'früh gehen und zuerst zuschlagen';
+      const lostNow = [p.top, p.bottom].filter((x) => !x.basic && x.card[x.side].lost);
+      const finale = hand.length === 2;
+      for (const x of lostNow) { if (!finale) budget--; lostPlayed.push(x.card.id); }
+      damage += p.top.dmg + p.bottom.dmg;
+      steps.push({
+        type: 'round', n: round, cycle, value: round1(p.value), top: p.top, bottom: p.bottom,
+        lead, other: lead === inis[0] ? inis[1] : inis[0], leadWhy, beforeEnemies: lead < enemyInit,
+        notes: p.notes, selfFed: p.selfFed, fed: p.fed || [], hungry: p.hungry || [],
+        lost: lostNow.map((x) => x.card.id), finale,
+      });
+      const gone = new Set(lostNow.map((x) => x.card.id));
+      for (const c of [p.top.card, p.bottom.card]) if (!gone.has(c.id)) discard.push(c);
+    }
+    hand = pairing.left;
+    if (hand.length >= 2) continue;
+    if (discard.length < 2) break;
+    // Rasten: die Karte abgeben, die für dieses Szenario am wenigsten bringt
+    const worst = discard.reduce((b, c) => (val[c.id].card < val[b.id].card ? c : b), discard[0]);
+    discard = discard.filter((c) => c !== worst);
+    hand = [...hand, ...discard];
+    discard = [];
+    if (longRest) round++;
+    steps.push({ type: 'rest', long: longRest, n: longRest ? round : null, lose: worst, handAfter: hand.length });
+    cycle++;
+    carried = [];
+    if (hand.length < 2) break;
+  }
+
+  const rounds = steps.filter((s) => s.type === 'round').length;
+  return {
+    steps, rounds, totalRounds: round, damage: Math.round(damage), share: Math.round(profile.hpTotal / profile.players),
+    enemyInit, killOrder: killOrder(profile), lossesPlanned: lostPlayed.length,
+  };
 }

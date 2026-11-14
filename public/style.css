@@ -61,7 +61,7 @@ main > section { margin-bottom: 28px; }
 /* ---------- Reiter unten ---------- */
 .reiter {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--schiefer);
   border-top: 1px solid var(--schiefer-hell);
   padding-bottom: env(safe-area-inset-bottom);
@@ -207,3 +207,21 @@ dialog::backdrop { background: rgba(10, 15, 20, .7); }
 .update-laeuft { color: var(--messing); }
 .aenderungen { margin: 0 0 8px; padding-left: 18px; list-style: disc; }
 .punkt { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--messing); vertical-align: middle; margin-left: 2px; }
+
+/* ---------- Plan ---------- */
+.kennzahlen.drei { grid-template-columns: repeat(3, 1fr); }
+.warn-text { color: var(--messing); }
+.ziele { margin: 0 0 8px; padding-left: 22px; list-style: decimal; display: grid; gap: 8px; }
+.plan { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.runde { background: var(--schiefer); border-radius: 8px; padding: 12px; border-left: 4px solid var(--klasse); }
+.runde-kopf { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; margin-bottom: 8px; }
+.runde-nr { font-family: var(--titel); font-weight: 800; font-size: 1.15rem; }
+.runde-ini { color: var(--pergament-leise); font-size: .92rem; }
+.zug { display: grid; grid-template-columns: 52px 1fr; gap: 8px; margin: 0 0 6px; }
+.zug-ini { color: var(--pergament-leise); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.runde .hinweis { margin: 6px 0 0; }
+.gruende li.neutral { color: var(--pergament-leise); }
+.gruende li.neutral::before { content: ""; }
+.rast { padding: 10px 12px; border: 1px dashed var(--pergament-leise); border-radius: 8px; }
+.rast p { margin: 0 0 4px; }
+@media (max-width: 380px) { .reiter button { font-size: .9rem; } }

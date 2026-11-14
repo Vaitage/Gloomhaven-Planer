@@ -67,3 +67,50 @@ test('Durchbohren wird gegen Schild höher bewertet', { skip: !withData }, () =>
   assert.equal(scoreCard(plain, base).score, scoreCard(pierce, base).score);
   assert.ok(scoreCard(pierce, shielded).score > scoreCard(plain, shielded).score);
 });
+
+// ---------- Spielplan ----------
+import { gamePlan, killOrder } from '../public/logic.js';
+
+test('Spielplan ist regelkonform und nutzt die Hand voll aus', { skip: !withData }, () => {
+  const sun = data.characters.find((c) => c.id === 'sun');
+  const profile = scenarioProfile(data, data.scenarios.find((x) => x.id === 1), 4, 1);
+  const pool = cardPool(sun, 1, []);
+  const { hand } = suggestHand(pool, profile, sun.handSize);
+  const cards = pool.filter((c) => hand.includes(c.id));
+
+  const none = gamePlan(cards, profile, { losses: 0 });
+  // ohne Verlustaktionen genau die bekannte Höchstzahl an Runden
+  assert.equal(none.rounds, stamina(11).rounds);
+  for (const s of none.steps.filter((x) => x.type === 'round')) {
+    assert.notEqual(s.top.card.id, s.bottom.card.id);
+    // Verlustaktionen nur in der allerletzten Runde, dort kosten sie nichts
+    for (const x of [s.top, s.bottom]) assert.ok(x.basic || !x.card[x.side].lost || s.finale, 'keine Verlustaktion ohne Freigabe');
+  }
+  // innerhalb eines Zyklus wird keine Karte doppelt gespielt
+  const byCycle = {};
+  for (const s of none.steps.filter((x) => x.type === 'round')) for (const x of [s.top, s.bottom]) {
+    const set = (byCycle[s.cycle] ||= new Set());
+    assert.ok(!set.has(x.card.id));
+    set.add(x.card.id);
+  }
+
+  const some = gamePlan(cards, profile, { losses: 3 });
+  assert.ok(some.lossesPlanned >= 1 && some.lossesPlanned <= 5);
+  assert.ok(some.rounds < none.rounds);
+  // eine als Verlust gespielte Karte taucht danach nie wieder auf
+  const gone = new Set();
+  for (const s of some.steps) {
+    if (s.type !== 'round') { assert.ok(!gone.has(s.lose.id)); continue; }
+    for (const x of [s.top, s.bottom]) assert.ok(!gone.has(x.card.id));
+    s.lost.forEach((id) => gone.add(id));
+  }
+  const long = gamePlan(cards, profile, { losses: 0, longRest: true });
+  assert.ok(long.totalRounds > long.rounds);
+});
+
+test('Zielreihenfolge stellt Bosse ans Ende', { skip: !withData }, () => {
+  const profile = scenarioProfile(data, data.scenarios.find((x) => x.id === 2), 4, 1);
+  const order = killOrder(profile);
+  assert.ok(order.length >= 2);
+  assert.equal(order[order.length - 1].type, 'boss');
+});
