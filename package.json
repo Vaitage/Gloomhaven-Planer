@@ -1,0 +1,13 @@
+{
+  "name": "gloomhaven-planer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Szenario-Vorbereitung und Handplanung für Gloomhaven (Brettspiel)",
+  "scripts": {
+    "start": "node server.mjs",
+    "import": "node scripts/import-data.mjs",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" }
+}

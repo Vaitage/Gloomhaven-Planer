@@ -1,0 +1,12 @@
+services:
+  gloomhaven-planer:
+    build: .
+    container_name: gloomhaven-planer
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    volumes:
+      - planer-daten:/data
+
+volumes:
+  planer-daten:

@@ -1,0 +1,203 @@
+/* Gloomhaven-Planer: Feldbuch eines Söldners.
+   Tinte und Schiefer als Grund, Pergament für Text, Messing für Bedienung.
+   Die Klassenfarbe des gewählten Helden (--klasse) färbt die Akzente. */
+:root {
+  --tinte: #18222b;
+  --schiefer: #223040;
+  --schiefer-hell: #2d3e51;
+  --pergament: #ece3cf;
+  --pergament-leise: #a9a698;
+  --messing: #c9a24a;
+  --glut: #d2674f;
+  --moos: #86b57e;
+  --klasse: #c9a24a;
+  --schrift: "Alegreya Sans", "Segoe UI", system-ui, sans-serif;
+  --titel: "Alegreya", Georgia, "Times New Roman", serif;
+  --rand: 16px;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--tinte);
+  color: var(--pergament);
+  font: 400 17px/1.45 var(--schrift);
+  min-height: 100dvh;
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  -webkit-tap-highlight-color: transparent;
+}
+h1, h2, h3 { font-family: var(--titel); line-height: 1.15; margin: 0; text-wrap: balance; }
+h1 { font-size: 1.9rem; font-weight: 800; }
+h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 10px; }
+h3 { font-size: 1.1rem; font-weight: 700; }
+p { margin: 0 0 8px; }
+ul { margin: 0; padding: 0; list-style: none; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; touch-action: manipulation; }
+:focus-visible { outline: 3px solid var(--klasse); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- Kopf ---------- */
+.kopf {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(8px + env(safe-area-inset-top)) var(--rand) 8px;
+  background: var(--tinte);
+  border-bottom: 1px solid var(--schiefer-hell);
+}
+.held { display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 4px 0; min-height: 44px; text-align: left; }
+.held-farbe { width: 14px; height: 34px; background: var(--klasse); clip-path: polygon(50% 0, 100% 22%, 100% 78%, 50% 100%, 0 78%, 0 22%); }
+.held-text { display: grid; }
+.held-text strong { font-family: var(--titel); font-size: 1.15rem; line-height: 1.1; }
+.held-text small { color: var(--pergament-leise); font-size: .85rem; }
+.status { font-size: .8rem; color: var(--pergament-leise); text-align: right; }
+.status.fehler { color: var(--glut); }
+
+main { padding: 16px var(--rand) 24px; max-width: 720px; margin: 0 auto; outline: none; }
+main > section { margin-bottom: 28px; }
+
+/* ---------- Reiter unten ---------- */
+.reiter {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  background: var(--schiefer);
+  border-top: 1px solid var(--schiefer-hell);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.reiter button {
+  background: none; border: 0; min-height: 56px; padding: 6px 2px;
+  font-family: var(--titel); font-weight: 700; font-size: 1rem; color: var(--pergament-leise);
+  border-top: 3px solid transparent;
+}
+.reiter button[aria-current="page"] { color: var(--pergament); border-top-color: var(--klasse); }
+
+/* ---------- Szenario-Kopf ---------- */
+.szenario-kopf { display: grid; gap: 10px; margin-bottom: 20px; }
+.nummer { display: flex; align-items: center; gap: 6px; }
+.nummer button {
+  width: 48px; height: 48px; border-radius: 6px; border: 1px solid var(--schiefer-hell);
+  background: var(--schiefer); font-size: 1.6rem; line-height: 1;
+}
+.nummer input {
+  width: 92px; height: 48px; text-align: center; border-radius: 6px;
+  border: 1px solid var(--messing); background: var(--tinte);
+  font-family: var(--titel); font-weight: 800; font-size: 1.6rem;
+  -moz-appearance: textfield; appearance: textfield;
+}
+.nummer input::-webkit-outer-spin-button, .nummer input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* ---------- Einstellungen ---------- */
+.einstellungen { display: grid; gap: 14px; }
+.feldname { display: block; font-size: .9rem; color: var(--pergament-leise); margin-bottom: 4px; }
+.seg { display: flex; border: 1px solid var(--schiefer-hell); border-radius: 6px; overflow: hidden; }
+.seg button { flex: 1; min-height: 44px; min-width: 0; padding: 4px 6px; background: var(--schiefer); border: 0; border-right: 1px solid var(--schiefer-hell); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--pergament); color: var(--tinte); font-weight: 700; }
+
+/* ---------- Knöpfe ---------- */
+.haupt, .leise { min-height: 44px; padding: 8px 16px; border-radius: 6px; font-weight: 700; }
+.haupt { background: var(--messing); color: var(--tinte); border: 1px solid var(--messing); }
+.leise { background: transparent; color: var(--pergament); border: 1px solid var(--schiefer-hell); font-weight: 500; }
+.leise[aria-pressed="true"] { border-color: var(--moos); color: var(--moos); }
+.breit { width: 100%; }
+.knopfreihe { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+
+/* ---------- Einschätzung ---------- */
+.einschaetzung { display: grid; gap: 8px; }
+.einschaetzung li { padding: 10px 12px 10px 14px; background: var(--schiefer); border-left: 4px solid var(--pergament-leise); border-radius: 0 6px 6px 0; }
+.einschaetzung li.warn { border-left-color: var(--glut); }
+.einschaetzung li.info { border-left-color: var(--messing); }
+.zahlen, .hinweis { color: var(--pergament-leise); font-size: .92rem; }
+.zahlen { margin-top: 10px; }
+.gut-text { color: var(--moos); }
+.leer { color: var(--pergament-leise); }
+
+/* ---------- Monster ---------- */
+.monster { padding: 12px 0; border-top: 1px solid var(--schiefer-hell); }
+.monster:last-of-type { border-bottom: 1px solid var(--schiefer-hell); }
+.monster h3 { margin-bottom: 6px; }
+.mwerte { display: grid; grid-template-columns: 84px 1fr; gap: 8px; margin-bottom: 4px; }
+.mwerte .anzahl { font-weight: 700; }
+.mwerte.elite .anzahl { color: var(--messing); }
+.mwerte.boss .anzahl { color: var(--glut); }
+.mwerte b { color: var(--glut); font-weight: 700; }
+.mzusatz { color: var(--pergament-leise); font-size: .92rem; margin: 4px 0 0; }
+.raum { margin-top: 14px; }
+.raum li { padding: 2px 0; }
+
+/* ---------- Karten ---------- */
+.kartenliste { display: grid; gap: 12px; }
+.karte { background: var(--schiefer); border-radius: 8px; padding: 12px; border: 1px solid transparent; }
+.karte.in-hand { border-color: var(--klasse); }
+.karte.fremd { opacity: .72; }
+.karte > header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.ini {
+  flex: none; width: 44px; height: 44px; display: grid; place-items: center;
+  font-family: var(--titel); font-weight: 800; font-size: 1.3rem;
+  background: var(--tinte); border: 2px solid var(--klasse); border-radius: 50%;
+  font-variant-numeric: tabular-nums;
+}
+.titel { flex: 1; min-width: 0; }
+.titel small { color: var(--pergament-leise); }
+.wert { font-family: var(--titel); font-weight: 800; font-size: 1.3rem; color: var(--messing); font-variant-numeric: tabular-nums; }
+.haelfte { display: grid; grid-template-columns: 52px 1fr; gap: 8px; margin: 0 0 4px; }
+.haelfte-name { color: var(--pergament-leise); font-size: .92rem; }
+.marke { display: inline-block; font-size: .78rem; padding: 0 6px; border-radius: 3px; border: 1px solid var(--pergament-leise); color: var(--pergament-leise); white-space: nowrap; }
+.marke.verlust { border-color: var(--glut); color: var(--glut); }
+.gruende { margin: 8px 0 0; font-size: .92rem; display: grid; gap: 2px; }
+.gruende li::before { content: "+ "; font-weight: 700; }
+.gruende li.gut { color: var(--moos); }
+.gruende li.schlecht { color: var(--glut); }
+.gruende li.schlecht::before { content: "\2212  "; }
+.gruende .wo { color: var(--pergament-leise); }
+.karte > footer { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+.karte > footer button { min-height: 40px; padding: 6px 12px; font-size: .95rem; }
+
+/* ---------- Hand: Initiative-Lineal ---------- */
+.lineal {
+  position: relative; height: 92px; margin: 6px 6px 8px;
+  border-bottom: 2px solid var(--pergament-leise);
+  background: repeating-linear-gradient(90deg, transparent 0 calc(5% - 1px), var(--schiefer-hell) calc(5% - 1px) 5%);
+}
+.lineal .skala b { position: absolute; bottom: -22px; transform: translateX(-50%); font-weight: 400; font-size: .8rem; color: var(--pergament-leise); }
+.strich { position: absolute; bottom: 0; width: 4px; height: 56px; margin-left: -2px; background: var(--klasse); border-radius: 2px 2px 0 0; }
+.strich.verlust { background: var(--glut); }
+.strich i { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); font-style: normal; font-size: .78rem; font-variant-numeric: tabular-nums; }
+.strich:nth-child(even) { height: 36px; }
+.lineal + .hinweis { margin-top: 28px; }
+.kennzahlen { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 14px 0; text-align: center; }
+.kennzahlen b { display: block; font-family: var(--titel); font-size: 1.6rem; font-weight: 800; line-height: 1; }
+.kennzahlen span { font-size: .78rem; color: var(--pergament-leise); }
+.elemente { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.ausdauer b { font-family: var(--titel); font-size: 2.2rem; font-weight: 800; color: var(--klasse); margin-right: 4px; }
+.regler { display: block; margin: 12px 0; }
+.regler input { display: block; width: 100%; height: 44px; accent-color: var(--messing); }
+.haken { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.haken input { width: 22px; height: 22px; accent-color: var(--messing); }
+
+/* ---------- Notizen ---------- */
+textarea { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid var(--schiefer-hell); background: var(--schiefer); font-size: 16px; resize: vertical; }
+.notiz { padding: 10px 0; border-top: 1px solid var(--schiefer-hell); }
+.notiz p { margin: 8px 0 0; white-space: pre-wrap; }
+.leer-seite { text-align: left; padding-top: 24px; display: grid; gap: 12px; justify-items: start; }
+
+/* ---------- Dialoge ---------- */
+dialog { border: 1px solid var(--schiefer-hell); border-radius: 10px; background: var(--schiefer); color: var(--pergament); padding: 0; width: min(92vw, 440px); max-height: 90dvh; }
+dialog::backdrop { background: rgba(10, 15, 20, .7); }
+.dialog-inhalt { display: grid; gap: 14px; padding: 20px; }
+.dialog-inhalt label { display: grid; gap: 4px; font-size: .9rem; color: var(--pergament-leise); }
+.dialog-inhalt select, .dialog-inhalt input { min-height: 46px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--schiefer-hell); background: var(--tinte); color: var(--pergament); font-size: 16px; }
+.dialog-inhalt img { width: 100%; height: auto; border-radius: 8px; min-height: 200px; background: var(--tinte); }
+.dialog-knoepfe { display: flex; justify-content: flex-end; gap: 10px; }
+.fehlertext { color: var(--glut); margin: 0; }
+[hidden] { display: none !important; }
+
+@media (min-width: 640px) {
+  body { font-size: 18px; }
+  .kartenliste { grid-template-columns: 1fr 1fr; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .seg button, .reiter button, .karte { transition: background-color .12s, border-color .12s, color .12s; }
+}
