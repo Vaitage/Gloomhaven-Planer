@@ -12,6 +12,7 @@
   --moos: #86b57e;
   --klasse: #c9a24a;
   --tiefe: #0e151b;
+  --gold: #c9a24a;
   --schrift: "Alegreya Sans", "Segoe UI", system-ui, sans-serif;
   --titel: "Alegreya", Georgia, "Times New Roman", serif;
   --rand: 16px;
@@ -235,7 +236,10 @@ dialog::backdrop { background: rgba(10, 15, 20, .7); }
 /* ---------- Charakterbildschirm ---------- */
 .held-kopf { display: grid; gap: 6px; margin-bottom: 20px; }
 .held-kopf .hinweis { margin: 0 0 6px; }
-.unterreiter button { font-size: .9rem; padding: 4px 2px; }
+/* fünf Bereiche passen nicht nebeneinander: die Leiste lässt sich seitlich wischen */
+.unterreiter { overflow-x: auto; scrollbar-width: none; }
+.unterreiter::-webkit-scrollbar { display: none; }
+.unterreiter button { flex: none; font-size: .92rem; padding: 4px 12px; white-space: nowrap; }
 .zwischen { margin: 18px 0 8px; }
 .marke.gut { border-color: var(--moos); color: var(--moos); }
 
@@ -280,7 +284,7 @@ dialog::backdrop { background: rgba(10, 15, 20, .7); }
 .gold { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 1.1rem; }
 .gold b { font-family: var(--titel); font-weight: 800; font-size: 2.4rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .gold.klein b { font-size: 1.5rem; }
-.muenze { width: 26px; height: 26px; border-radius: 50%; flex: none; background: radial-gradient(circle at 35% 30%, #f0d78a, var(--messing) 55%, #7d6226); box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .25); }
+.muenze { width: 26px; height: 26px; border-radius: 50%; flex: none; background: radial-gradient(circle at 35% 30%, #f0d78a, var(--gold) 55%, #7d6226); box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .25); }
 .gold.klein .muenze { width: 18px; height: 18px; }
 .slots { display: grid; gap: 6px; margin: 12px 0; }
 .slots li { display: grid; grid-template-columns: 132px 1fr; gap: 8px; }
@@ -302,13 +306,13 @@ dialog::backdrop { background: rgba(10, 15, 20, .7); }
 
 /* ---------- Verbesserungen ---------- */
 .vorschlaege { margin: 12px 0; padding: 0; list-style: none; display: grid; gap: 10px; counter-reset: v; }
-.vorschlaege li { counter-increment: v; background: var(--schiefer); border-radius: 8px; padding: 12px; }
-.vorschlaege li p { margin: 0 0 2px; }
+.vorschlaege > li { counter-increment: v; background: var(--schiefer); border-radius: 8px; padding: 12px; }
+.vorschlaege > li > p { margin: 0 0 2px; }
 .vorschlaege li > p:first-child::before { content: counter(v) ". "; color: var(--messing); font-weight: 700; }
 .vorschlaege .knopfreihe, .felder .knopfreihe { margin-top: 8px; }
 .felder { display: grid; gap: 10px; margin: 12px 0; }
-.felder li { background: var(--schiefer); border-radius: 8px; padding: 12px; display: grid; gap: 6px; }
-.felder li p { margin: 0; }
+.felder > li { background: var(--schiefer); border-radius: 8px; padding: 12px; display: grid; gap: 6px; }
+.felder > li > p { margin: 0; }
 
 /* ---------- Szenario: Schadenstabelle ---------- */
 .tabelle-rahmen { overflow-x: auto; margin: 0 0 10px; }
@@ -335,3 +339,38 @@ dialog::backdrop { background: rgba(10, 15, 20, .7); }
 @keyframes ep-leuchten {
   50% { box-shadow: inset 0 0 0 2px var(--tiefe), inset 0 4px 8px rgba(0, 0, 0, .7), 0 0 16px 2px var(--klasse); }
 }
+
+/* ---------- Perks und Zähler ---------- */
+.perks { display: grid; gap: 8px; margin: 10px 0; }
+.perks > li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--schiefer); border-radius: 8px; border-left: 4px solid transparent; }
+.perks > li.an { border-left-color: var(--klasse); }
+.perk-text { flex: 1; min-width: 0; }
+.perk-text small { color: var(--pergament-leise); }
+.perks > li > button { flex: none; min-height: 40px; padding: 6px 12px; font-size: .95rem; }
+.zaehler { flex: none; display: flex; align-items: center; gap: 6px; }
+.zaehler button { width: 40px; height: 40px; border-radius: 6px; border: 1px solid var(--schiefer-hell); background: var(--tinte); font-size: 1.3rem; line-height: 1; }
+.zaehler button:disabled { opacity: .35; }
+.zaehler b { min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; }
+.haken-zeile { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0 6px; }
+.deckkarten { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 12px 0 8px; }
+.deckkarten li { padding: 4px 10px; background: var(--schiefer); border-radius: 4px; }
+.deckkarten b { font-variant-numeric: tabular-nums; }
+.vorschlaege.ohne-nummer li > p:first-child::before { content: none; }
+.vorschlaege .gruende { margin: 6px 0 0; }
+
+/* ---------- Erst-Setup ---------- */
+.setup { display: grid; gap: 12px; }
+.setup-schritt { margin: 0; color: var(--pergament-leise); font-size: .92rem; }
+.setup-balken { height: 6px; background: var(--tiefe); border-radius: 3px; overflow: hidden; }
+.setup-balken i { display: block; height: 100%; background: var(--klasse); }
+.setup p { margin: 0; }
+.feld { display: grid; gap: 4px; font-size: .9rem; color: var(--pergament-leise); }
+.feld input { min-height: 46px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--schiefer-hell); background: var(--schiefer); color: var(--pergament); font-size: 16px; }
+.feld input[readonly] { opacity: .7; }
+.setup-knoepfe { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; position: sticky; bottom: calc(64px + env(safe-area-inset-bottom)); padding: 10px 0; background: var(--tinte); }
+.setup-knoepfe .haupt { min-width: 160px; }
+.dialog-knoepfe.spalte { flex-direction: column; align-items: stretch; }
+
+.held-zeile { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.held-zeile .hinweis { margin: 4px 0 6px; }
+.held-zeile button { flex: none; min-height: 40px; padding: 6px 14px; }

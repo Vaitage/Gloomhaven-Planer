@@ -241,3 +241,86 @@ test('Gegenstände sind importiert und werden passend bewertet', { skip: !withDa
   const bogen = data.items.find((i) => i.id === 9);
   assert.ok(scoreItem(bogen, profile, undefined, { melee: 6, ranged: 0 }).score < scoreItem(bogen, profile, undefined, { melee: 0, ranged: 6 }).score);
 });
+
+// ---------- Angriffsmodifikator-Deck ----------
+import { baseDeck, buildDeck, deckStats, perkAdvice, guidePerk, perksAllowed } from '../public/logic.js';
+import { GUIDES } from '../public/tipps.js';
+
+test('Grunddeck hat 20 Karten und im Schnitt keinen Bonus', () => {
+  const deck = { cards: baseDeck() };
+  const st = deckStats(deck, 3);
+  assert.equal(st.size, 20);
+  assert.ok(Math.abs(st.avg - 3) < 1e-9);
+  assert.equal(st.miss, 1 / 20);
+  assert.equal(st.crit, 1 / 20);
+  assert.equal(st.worse, 7 / 20); // fünf −1, eine −2, ein Fehlschlag
+  assert.equal(st.better, 7 / 20);
+});
+
+test('Perks verändern das Deck wie auf dem Charakterbogen', { skip: !withData }, () => {
+  const sun = data.characters.find((c) => c.id === 'sun');
+  const idx = (key) => sun.perks.findIndex((p) => p.key === key);
+  const take = (...keys) => { const t = []; for (const k of keys) t[idx(k)] = (t[idx(k)] || 0) + 1; return t; };
+  // zweimal "entferne zwei −1": eine −1 bleibt
+  let d = buildDeck(sun.perks, take('rm:2x-1', 'rm:2x-1'));
+  assert.equal(d.cards.length, 16);
+  assert.equal(d.cards.filter((c) => c.k === '-1').length, 1);
+  // mehr als erlaubt wird nicht gezählt
+  const zuViel = []; zuViel[idx('rm:2x-1')] = 5;
+  assert.equal(buildDeck(sun.perks, zuViel).cards.length, 16);
+  // −2 gegen +0 tauschen
+  d = buildDeck(sun.perks, take('re:1x-2>1x+0'));
+  assert.equal(d.cards.length, 20);
+  assert.equal(d.cards.filter((c) => c.k === '-2').length, 0);
+  assert.equal(d.cards.filter((c) => c.k === '+0').length, 7);
+  // rollende +1 heben den Schnitt, ohne das Deck für die Trefferquote zu verändern
+  const roll = deckStats(buildDeck(sun.perks, take('add:2x+1R')), 3);
+  assert.equal(roll.rolling, 2);
+  assert.ok(roll.avg > 3 && roll.avg < 3.2);
+  assert.equal(roll.miss, 1 / 20);
+  // Rüstung bringt −1-Karten, der Perk "negative Gegenstandseffekte ignorieren" hebt das auf
+  assert.equal(buildDeck(sun.perks, [], 2).cards.length, 22);
+  const frei = buildDeck(sun.perks, take('item+add:2x+1'), 2);
+  assert.equal(frei.ignoreItem, true);
+  assert.equal(frei.cards.filter((c) => c.item).length, 0);
+  assert.equal(frei.cards.length, 22); // 20 + zwei +1
+});
+
+test('Perk-Empfehlung: Rechnung und Guide', { skip: !withData }, () => {
+  const sun = data.characters.find((c) => c.id === 'sun');
+  const rat = perkAdvice(sun.perks, [], 0);
+  assert.equal(rat.list.length, sun.perks.length);
+  for (let i = 1; i < rat.list.length; i++) assert.ok(rat.list[i - 1].gain >= rat.list[i].gain);
+  assert.ok(rat.list[0].gain > 0);
+  // mit Fellrüstung (zwei −1) wird der Gegenstands-Perk deutlich wertvoller
+  const ohne = perkAdvice(sun.perks, [], 0).list.find((x) => x.perk.item).gain;
+  const mit = perkAdvice(sun.perks, [], 2).list.find((x) => x.perk.item).gain;
+  assert.ok(mit > ohne);
+  // Guide-Reihenfolge: erst der Gegenstands-Perk, danach −2 tauschen
+  const order = GUIDES.sun.perks;
+  const first = guidePerk(sun.perks, [], order);
+  assert.equal(sun.perks[first].key, 'item+add:2x+1');
+  const taken = []; taken[first] = 1;
+  assert.equal(sun.perks[guidePerk(sun.perks, taken, order)].key, 're:1x-2>1x+0');
+  assert.equal(perksAllowed(1), 0);
+  assert.equal(perksAllowed(4, 7), 5);
+});
+
+test('Guides passen zu den Daten aller Klassen', { skip: !withData }, () => {
+  assert.equal(Object.keys(GUIDES).length, data.characters.length);
+  for (const c of data.characters) {
+    const g = GUIDES[c.id];
+    assert.ok(g, `Guide fehlt: ${c.id}`);
+    for (const [lvl, t] of Object.entries(g.aufstieg)) {
+      const card = c.cards.find((x) => x.nameEn === t.karte);
+      assert.ok(card, `${c.id} Stufe ${lvl}: Karte ${t.karte} gibt es nicht`);
+      assert.ok(card.level !== 'X' && card.level >= 2 && card.level <= Number(lvl), `${c.id} Stufe ${lvl}: ${t.karte} hat Stufe ${card.level}`);
+    }
+    for (const key of g.perks) assert.ok(c.perks.some((p) => p.key === key), `${c.id}: Perk ${key} gibt es nicht`);
+    for (const n of g.gegenstaende) assert.ok(data.items.some((i) => i.nameEn === n), `${c.id}: Gegenstand ${n} gibt es nicht`);
+    // die Guide-Reihenfolge lässt sich vollständig abarbeiten
+    const taken = [];
+    for (let i = 0; i < 30; i++) { const next = guidePerk(c.perks, taken, g.perks); if (next < 0) break; taken[next] = (taken[next] || 0) + 1; }
+    for (const key of g.perks) { const i = c.perks.findIndex((p) => p.key === key); assert.equal(taken[i], c.perks[i].count, `${c.id}: ${key} bleibt offen`); }
+  }
+});

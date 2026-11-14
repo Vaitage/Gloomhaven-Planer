@@ -1,6 +1,6 @@
 // Charakterbildschirm: Erfahrung, Gold, Ausrüstung, Stufenaufstieg und Verbesserungen.
 // Bekommt alles Nötige über "ctx" von app.js, damit hier kein eigener Zustand lebt.
-import { xpProgress, XP_LEVELS, levelUpAdvice, shopAdvice, scoreItem, attackFit, slotStickers, enhancementCost, enhancementAdvice } from './logic.js';
+import { xpProgress, XP_LEVELS, levelUpAdvice, shopAdvice, scoreItem, attackFit, slotStickers, enhancementCost, enhancementAdvice, buildDeck, deckStats, perkAdvice, guidePerk, perksAllowed } from './logic.js';
 import { GUIDES } from './tipps.js';
 
 const SLOT_NAMEN = { head: 'Kopf', body: 'Körper', onehand: 'Eine Hand', twohand: 'Zwei Hände', legs: 'Beine', small: 'Kleiner Gegenstand' };
@@ -12,7 +12,7 @@ const ZEILEN_NAMEN = {
 };
 const FORM_NAMEN = { square: 'Quadrat', circle: 'Kreis', diamond: 'Raute', diamond_plus: 'Raute mit Plus', hex: 'Sechseck' };
 const MUENZWERT = [2, 2, 3, 3, 4, 4, 5, 6]; // Gold je Münze nach Szenariostufe
-const HELD_REITER = [['uebersicht', 'Übersicht'], ['ausruestung', 'Ausrüstung'], ['aufstieg', 'Aufstieg'], ['verbessern', 'Verbessern']];
+const HELD_REITER = [['uebersicht', 'Übersicht'], ['ausruestung', 'Ausrüstung'], ['aufstieg', 'Aufstieg'], ['deck', 'Angriffsdeck'], ['verbessern', 'Verbessern']];
 
 // Ergänzt fehlende Felder bei Profilen, die vor dem Charakterbildschirm angelegt wurden.
 export function heldDefaults(p) {
@@ -23,7 +23,139 @@ export function heldDefaults(p) {
   if (typeof p.gold !== 'number') p.gold = 0;
   p.items ||= [];
   p.enh ||= {};
+  p.perks ||= {};
+  if (typeof p.checks !== 'number') p.checks = 0;
   return p;
+}
+
+// ---------- Angriffsdeck und Perks ----------
+
+const perkStand = (p) => ((p.perks ||= {})[p.classId] ||= []);
+const perkSumme = (taken) => taken.reduce((a, b) => a + (b || 0), 0);
+// −1-Karten, die getragene Rüstung ins Deck bringt
+const itemMinus = (ctx, p) => p.items.filter((e) => e.worn).reduce((a, e) => a + ((itemById(ctx, e.id) || {}).tags?.minusOne || 0), 0);
+const prozent = (x) => `${Math.round(x * 100)} %`;
+const komma = (x) => Number(x).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function effektName(ctx, token) {
+  const [kind, arg] = token.split(':');
+  if (kind === 'element') return `${ctx.elemName(arg)} erzeugen`;
+  const fest = { target: 'zusätzliches Ziel', heal: `Heilung ${arg}`, shield: `Schild ${arg}`, pierce: `Durchbohren ${arg}`, push: `Schieben ${arg}`, pull: `Ziehen ${arg}`, refresh: 'Gegenstand auffrischen' };
+  return fest[kind] || ctx.condName(kind);
+}
+
+// Kartenschlüssel wie "+1R:stun" lesbar machen
+function modName(ctx, key) {
+  if (key === 'x2') return '×2';
+  if (key === 'x0') return 'Fehlschlag';
+  const m = key.match(/^([+-]\d+)(R?)(?::(.*))?$/);
+  if (!m) return key;
+  const fx = m[3] ? m[3].split('+').map((t) => {
+    const n = t.match(/^(heal|shield|pierce|push|pull|target)(\d+)$/);
+    if (n) return effektName(ctx, `${n[1]}:${n[2]}`);
+    if (t === 'refresh') return effektName(ctx, 'refresh');
+    return ctx.data.elementNames[t] ? `${ctx.elemName(t)} erzeugen` : ctx.condName(t);
+  }).join(' und ') : '';
+  return `${m[2] ? 'rollende ' : ''}${m[1].replace('-', '−')}${fx ? ` mit ${fx}` : ''}`;
+}
+
+// Liste aller Perks mit Zählern. "acts" nennt die Aktionen für Plus und Minus.
+export function perkListeHtml(ctx, perks, taken, acts) {
+  return `<ul class="perks">${perks.map((perk, i) => {
+    const n = taken[i] || 0;
+    return `<li class="${n ? 'an' : ''}">
+      <span class="perk-text">${ctx.esc(perk.text)}</span>
+      <span class="zaehler">
+        <button type="button" data-act="${acts.minus}" data-i="${i}" aria-label="Einmal weniger" ${n ? '' : 'disabled'}>−</button>
+        <b>${n} / ${perk.count}</b>
+        <button type="button" data-act="${acts.plus}" data-i="${i}" aria-label="Einmal mehr" ${n >= perk.count ? 'disabled' : ''}>+</button>
+      </span>
+    </li>`;
+  }).join('')}</ul>`;
+}
+
+function perkWirkung(ctx, x) {
+  const teile = [`Schaden bei Angriff 3 im Schnitt ${komma(x.before.avg)} → ${komma(x.after.avg)}`];
+  if (Math.abs(x.dWorse) > 0.004) teile.push(`schlechte Karte bei ${prozent(x.before.worse)} → ${prozent(x.after.worse)} der Angriffe`);
+  const neu = Object.entries(x.after.effects).filter(([k, v]) => v - (x.before.effects[k] || 0) > 0.004)
+    .map(([k, v]) => `${effektName(ctx, k)} bei ${prozent(v)} der Angriffe`);
+  teile.push(...neu);
+  if (x.perk.scenario) teile.push('hilft außerdem in Szenarien mit negativen Effekten');
+  if (x.perk.item) teile.push(x.before.counts['-1'] !== x.after.counts['-1'] || itemMinusHinweis(x) ? 'hebt die −1-Karten deiner Rüstung auf' : 'lohnt vor allem mit schwerer Rüstung');
+  return teile;
+}
+const itemMinusHinweis = (x) => x.before.size - x.after.size > 0;
+
+function perkEmpfehlungHtml(ctx, p, c) {
+  const { esc } = ctx;
+  const taken = perkStand(p);
+  const rat = perkAdvice(c.perks, taken, itemMinus(ctx, p));
+  const guide = GUIDES[p.classId];
+  const gi = guide && guide.perks ? guidePerk(c.perks, taken, guide.perks) : -1;
+  const vergeben = perkSumme(taken);
+  const erlaubt = perksAllowed(p.level, p.checks);
+  const stand = `<p class="${vergeben < erlaubt ? 'update-neu' : 'hinweis'}">${vergeben < erlaubt
+    ? `Du hast noch ${erlaubt - vergeben} ${erlaubt - vergeben === 1 ? 'Perk' : 'Perks'} zu vergeben.`
+    : `Vergeben: ${vergeben} von ${erlaubt} Perks.`}</p>`;
+  if (!rat.list.length) return `${stand}<p>Alle Perks dieser Klasse sind vergeben.</p>`;
+  const zeile = (x, marke) => `
+    <li>
+      <p><b>${esc(x.perk.text)}</b></p>
+      ${marke ? `<p>${marke}</p>` : ''}
+      <ul class="gruende">${perkWirkung(ctx, x).map((t) => `<li class="neutral">${esc(t)}</li>`).join('')}</ul>
+      <div class="knopfreihe"><button type="button" class="${marke ? 'haupt' : 'leise'}" data-act="perk+" data-i="${x.index}">Diesen Perk eintragen</button></div>
+    </li>`;
+  const laut = gi >= 0 ? rat.list.find((x) => x.index === gi) : null;
+  const rest = rat.list.filter((x) => x !== laut).slice(0, laut ? 2 : 3);
+  return `${stand}
+    ${laut ? `<h3 class="zwischen">Empfehlung</h3><ol class="vorschlaege ohne-nummer">${zeile(laut, '<span class="marke gut">nächster Schritt laut Guide</span>')}</ol>` : ''}
+    <h3 class="zwischen">${laut ? 'Rechnerisch am stärksten' : 'Empfehlung nach Rechnung'}</h3>
+    <ol class="vorschlaege">${rest.map((x) => zeile(x, '')).join('')}</ol>
+    <p class="hinweis">Die Rechnung vergleicht dein Deck vorher und nachher: mittlerer Schaden, Wert der Zusatzeffekte und wie oft eine schlechte Karte kommt.${laut ? ` Die Reihenfolge stammt aus dem ${esc(guide.quelle)}.` : ''}</p>`;
+}
+
+function deckHtml(ctx, p, c) {
+  const taken = perkStand(p);
+  const minus = itemMinus(ctx, p);
+  const deck = buildDeck(c.perks, taken, minus);
+  const st = deckStats(deck);
+  const reihe = ['x2', '+4', '+3', '+2', '+1', '+0', '-1', '-2', 'x0'];
+  const keys = Object.keys(st.counts).sort((a, b) => {
+    const ra = reihe.indexOf(a), rb = reihe.indexOf(b);
+    return (ra < 0 ? 99 : ra) - (rb < 0 ? 99 : rb) || a.localeCompare(b);
+  });
+  const fx = Object.entries(st.effects).sort((a, b) => b[1] - a[1]);
+  return `
+    <section>
+      <h2>Dein Angriffsdeck</h2>
+      <div class="kennzahlen vier">
+        <div><b>${komma(st.avg)}</b><span>Schaden bei Angriff 3</span></div>
+        <div><b>${prozent(st.miss)}</b><span>Fehlschlag</span></div>
+        <div><b>${prozent(st.worse)}</b><span>schlechter als +0</span></div>
+        <div><b>${prozent(st.better)}</b><span>besser als +0</span></div>
+      </div>
+      <ul class="deckkarten">${keys.map((k) => `<li><b>${st.counts[k]}×</b> ${ctx.esc(modName(ctx, k))}</li>`).join('')}</ul>
+      <p class="hinweis">${st.size} Karten, davon ${st.rolling} rollend.${minus && !deck.ignoreItem ? ` Deine Rüstung bringt ${minus}× −1 ins Deck.` : ''}${minus && deck.ignoreItem ? ' Die −1-Karten deiner Rüstung zählen dank Perk nicht.' : ''}${deck.ignoreScenario ? ' Negative Szenarioeffekte ignorierst du.' : ''}</p>
+      ${fx.length ? `<p class="hinweis">Zusatzeffekte je Angriff: ${fx.map(([k, v]) => `${ctx.esc(effektName(ctx, k))} ${prozent(v)}`).join(', ')}.</p>` : ''}
+    </section>
+    <section>
+      <h2>Nächster Perk</h2>
+      ${perkEmpfehlungHtml(ctx, p, c)}
+    </section>
+    <section>
+      <h2>Deine Perks</h2>
+      <p class="hinweis">Trag ein, was auf deinem Charakterbogen angekreuzt ist.</p>
+      ${perkListeHtml(ctx, c.perks, taken, { plus: 'perk+', minus: 'perk-' })}
+      <div class="haken-zeile">
+        <span>Kampfziel-Haken</span>
+        <span class="zaehler">
+          <button type="button" data-act="haken-" aria-label="Ein Haken weniger" ${p.checks ? '' : 'disabled'}>−</button>
+          <b>${p.checks} / 18</b>
+          <button type="button" data-act="haken+" aria-label="Ein Haken mehr" ${p.checks >= 18 ? 'disabled' : ''}>+</button>
+        </span>
+      </div>
+      <p class="hinweis">Jeder Stufenaufstieg gibt einen Perk, je drei Kampfziel-Haken einen weiteren. Auf Stufe ${p.level} mit ${p.checks} Haken sind das ${perksAllowed(p.level, p.checks)}.</p>
+    </section>`;
 }
 
 const itemById = (ctx, id) => ctx.data.items.find((i) => i.id === id);
@@ -124,7 +256,8 @@ function uebersichtHtml(ctx, p, c) {
       ${warn.length ? `<ul class="einschaetzung">${warn.map((x) => `<li class="warn">${esc(x)}</li>`).join('')}</ul>` : ''}
       <div class="knopfreihe">
         <button type="button" class="leise" data-held="ausruestung">Ausrüstung bearbeiten</button>
-        <button type="button" class="leise" data-act="held">Spieler, Klasse oder Stufe ändern</button>
+        <button type="button" class="leise" data-held="deck">Angriffsdeck und Perks</button>
+
       </div>
     </section>`;
 }
@@ -289,7 +422,12 @@ function aufstiegHtml(ctx, p, c) {
     </section>
     ${alt.length ? `<section><h2>Oder eine frühere Karte nachholen</h2>
       <p class="hinweis">Beim Aufstieg darfst du auch eine Karte niedrigerer Stufe nehmen, die du bisher ausgelassen hast.</p>
-      <div class="kartenliste">${alt.map(karte).join('')}</div></section>` : ''}`;
+      <div class="kartenliste">${alt.map(karte).join('')}</div></section>` : ''}
+    <section>
+      <h2>Perk zum Aufstieg</h2>
+      <p class="hinweis">Mit jedem Stufenaufstieg wählst du auch einen Perk für dein Angriffsdeck.</p>
+      ${perkEmpfehlungHtml(ctx, p, c)}
+    </section>`;
 }
 
 // ---------- Verbesserungen ----------
@@ -373,11 +511,17 @@ export function renderHeld(ctx) {
   const tab = HELD_REITER.some(([k]) => k === ctx.local.heldTab) ? ctx.local.heldTab : 'uebersicht';
   const body = tab === 'ausruestung' ? ausruestungHtml(ctx, p)
     : tab === 'aufstieg' ? aufstiegHtml(ctx, p, c)
-      : tab === 'verbessern' ? verbessernHtml(ctx, p) : uebersichtHtml(ctx, p, c);
+      : tab === 'deck' ? deckHtml(ctx, p, c)
+        : tab === 'verbessern' ? verbessernHtml(ctx, p) : uebersichtHtml(ctx, p, c);
   ctx.view.innerHTML = `
     <section class="held-kopf">
-      <h1>${ctx.esc(c.name)}</h1>
-      <p class="hinweis">${ctx.esc(ctx.local.profile)}, Stufe ${p.level}</p>
+      <div class="held-zeile">
+        <div>
+          <h1>${ctx.esc(c.name)}</h1>
+          <p class="hinweis">${ctx.esc(ctx.local.profile)}, Stufe ${p.level}</p>
+        </div>
+        <button type="button" class="leise" data-act="held">Wechseln</button>
+      </div>
       <div class="seg unterreiter" role="group" aria-label="Bereiche des Helden">
         ${HELD_REITER.map(([k, label]) => `<button type="button" data-held="${k}" aria-pressed="${k === tab}">${label}</button>`).join('')}
       </div>
@@ -445,12 +589,26 @@ export function heldClick(ctx, b) {
     return fertig();
   }
 
+  if (act === 'perk+' || act === 'perk-') {
+    const taken = perkStand(p);
+    const i = Number(b.dataset.i);
+    const perk = ctx.character().perks[i];
+    if (!perk) return true;
+    taken[i] = Math.max(0, Math.min(perk.count, (taken[i] || 0) + (act === 'perk+' ? 1 : -1)));
+    for (let j = 0; j < taken.length; j++) taken[j] ||= 0; // keine Lücken, die beim Speichern zu null würden
+    return fertig();
+  }
+  if (act === 'haken+' || act === 'haken-') {
+    p.checks = Math.max(0, Math.min(18, p.checks + (act === 'haken+' ? 1 : -1)));
+    return fertig();
+  }
+
   if (act === 'aufstieg') {
     const id = Number(b.dataset.id);
     const owned = ctx.owned();
     if (!owned.includes(id)) owned.push(id);
     p.level = Math.min(9, p.level + 1);
-    ctx.local.heldTab = 'uebersicht';
+    ctx.local.heldTab = 'deck'; // als Nächstes steht der Perk an
     window.scrollTo(0, 0);
     return fertig();
   }

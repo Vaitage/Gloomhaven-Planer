@@ -28,13 +28,19 @@ App und Dienst sprechen nur über `data/update/anfrage` (schreibt die App: `prue
 ## Charakterbildschirm
 `public/held.js` zeichnet ihn und verarbeitet seine Klicks. Es bekommt alles über `heldCtx` aus `app.js` und hält keinen eigenen Zustand. Am Profil hängen `xp`, `gold`, `items` (`{id, worn}`), `enh` (gekaufte Verbesserungen je Klasse) und `tank`. `heldDefaults()` ergänzt die Felder bei alten Profilen. Gekaufte Verbesserungen rechnet `applyEnhancements()` in die Karten ein, deshalb läuft der Kartenvorrat immer über `pool()`.
 
-Guide-Empfehlungen stehen in `public/tipps.js` (Kartennamen englisch, Text in eigenen Worten, Quelle nennen). Die Aufstiegsempfehlung folgt dem Guide, wenn einer hinterlegt ist, sonst der Rechnung aus `levelUpAdvice()`.
+Guide-Empfehlungen stehen in `public/tipps.js` für alle 17 Klassen (Kartennamen englisch wie in den GHS-Daten, Text in eigenen Worten, Quelle nennen). Die Aufstiegsempfehlung folgt dem Guide, wenn einer hinterlegt ist, sonst der Rechnung aus `levelUpAdvice()`. Ein Test prüft, dass jede genannte Karte, jeder Perk-Schlüssel und jeder Gegenstand in den Daten existiert.
+
+## Angriffsdeck und Perks
+Der Import schreibt je Klasse `perks` mit Schlüssel (`rm:2x-1`, `re:1x-1>1x+1`, `add:2x+1R`, `item+add:2x+1`, `scen` …), deutschem Text und den Karten, die entfernt oder hinzugefügt werden. `buildDeck()`, `deckStats()` und `perkAdvice()` in `logic.js` rechnen damit. `guidePerk()` liefert den nächsten Perk nach der Guide-Reihenfolge aus `tipps.js`. Am Profil stehen `perks` (Zähler je Klasse) und `checks` (Kampfziel-Haken).
+
+## Erst-Setup und Farbschema
+`public/setup.js` führt durch das Anlegen oder Bearbeiten eines Charakters. Der Entwurf liegt in `local.setup` und wird erst am Ende ins Profil geschrieben. `applyTheme()` in `app.js` leitet aus der Klassenfarbe alle Farb-Variablen ab. Gold behält über `--gold` seine eigene Farbe.
 
 Gegenstände kommen aus `items.json` von GHS. `itemTags()` im Import leitet aus dem englischen Regeltext grobe Merkmale ab, `scoreItem()` bewertet damit.
 
 ## Offene Ideen
-- Angriffsmodifikator-Deck mit Perks: vom Nutzer ausdrücklich nicht gewünscht.
-- Gruppenansicht über alle Spieler: ebenfalls nicht gewünscht.
+- Gruppenansicht über alle Spieler: vom Nutzer nicht gewünscht.
+- Vorteil, Nachteil, Segen und Fluch im Angriffsdeck.
 - Verbesserungsfelder von Beschwörungen.
 - Gedruckte deutsche Kartennamen der Sonnenhüterin eintragen, sobald der Nutzer Fotos schickt.
 - Deutsche Kartentexte für die anderen freischaltbaren Klassen von Hand nachtragen.

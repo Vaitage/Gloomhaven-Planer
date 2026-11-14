@@ -1,5 +1,6 @@
 import { scenarioProfile, cardPool, scoreCard, suggestHand, handStats, stamina, autoPlan, estimateRounds, calibration, incomingDamage, xpProgress, applyEnhancements } from './logic.js';
 import { renderHeld, heldClick, heldInput, heldChange, heldDefaults, stickerName } from './held.js';
+import { renderSetup, setupStart, setupClick, setupInput, setupFarbe } from './setup.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -26,6 +27,7 @@ const local = {
   enhCard: null,
   epAlt: null,
   targets: {}, // von Hand gesetzte Szenariolänge je Szenario
+  setup: null, // Entwurf beim Anlegen oder Bearbeiten eines Charakters
 };
 
 // ---------- Laden und Speichern ----------
@@ -82,19 +84,65 @@ function classLabel(c, reveal) {
   return reveal ? `${c.name} (${SYMBOL[c.id] || c.id})` : `Symbol: ${SYMBOL[c.id] || c.id}`;
 }
 
+// ---------- Farbschema nach Klasse ----------
+
+function hexToHsl(hex) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+  if (!m) return null;
+  const [r, g, b] = m.slice(1).map((x) => parseInt(x, 16) / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (!d) return { h: 0, s: 0, l: l * 100 };
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: Math.round((h * 60 + 360) % 360), s: s * 100, l: l * 100 };
+}
+
+const THEMA = ['--klasse', '--messing', '--tinte', '--schiefer', '--schiefer-hell', '--tiefe', '--pergament-leise'];
+let themaFarbe = null;
+
+// Färbt die ganze App nach der Klasse: Hintergrund und Flächen bekommen den Farbton
+// der Klasse in dunkel, Knöpfe und Akzente die Klassenfarbe selbst (bei dunklen
+// Klassenfarben aufgehellt, damit dunkle Schrift darauf lesbar bleibt).
+function applyTheme(hex) {
+  if (hex === themaFarbe) return;
+  themaFarbe = hex;
+  const root = document.documentElement.style;
+  const c = hexToHsl(hex);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (!c) {
+    THEMA.forEach((p) => root.removeProperty(p));
+    if (meta) meta.content = '#18222b';
+    return;
+  }
+  const farbe = (s, l) => `hsl(${c.h}, ${Math.round(Math.min(c.s, s))}%, ${l}%)`;
+  const akzent = `hsl(${c.h}, ${Math.round(c.s)}%, ${Math.round(Math.max(c.l, 64))}%)`;
+  root.setProperty('--klasse', akzent);
+  root.setProperty('--messing', akzent);
+  root.setProperty('--tinte', farbe(34, 10));
+  root.setProperty('--schiefer', farbe(28, 16));
+  root.setProperty('--schiefer-hell', farbe(24, 27));
+  root.setProperty('--tiefe', farbe(38, 6));
+  root.setProperty('--pergament-leise', farbe(16, 70));
+  if (meta) meta.content = farbe(34, 10);
+}
+
 // ---------- Kopf ----------
 
 function renderHeader() {
   const p = profile();
   const c = character();
-  $('#heldName').textContent = c ? c.name : 'Held wählen';
+  const imSetup = local.tab === 'setup' && local.setup;
+  applyTheme(imSetup ? setupFarbe(heldCtx) : c ? c.color : null);
+  $('#heldName').textContent = c ? c.name : imSetup ? 'Neuer Charakter' : 'Held wählen';
   if (p) heldDefaults(p);
   $('#heldSub').textContent = p && c ? `Stufe ${p.level}, ${p.gold} Gold` : 'Tippen zum Einrichten';
   $('#heldBtn').classList.toggle('aktiv', local.tab === 'held');
   const mini = $('#miniEp');
   mini.parentElement.hidden = !(p && c);
   if (p && c) mini.style.width = `${Math.round(xpProgress(p.xp, p.level).ratio * 100)}%`;
-  document.documentElement.style.setProperty('--klasse', c ? c.color : '#c9a24a');
   const neu = !!(updates && updates.status && updates.status.verfuegbar);
   document.querySelectorAll('.reiter button').forEach((b) => {
     if (b.dataset.tab === 'notizen') b.innerHTML = neu ? 'Notizen <span class="punkt" title="Neue Version verfügbar"></span><span class="sr">, neue Version verfügbar</span>' : 'Notizen';
@@ -105,61 +153,51 @@ function renderHeader() {
 // ---------- Held-Dialog ----------
 
 const heldDialog = $('#heldDialog');
+function selectProfile(name) {
+  local.profile = name;
+  localStorage.setItem('gp.profil', name);
+  local.epAlt = null;
+}
+
+function startSetup(name = null) {
+  setupStart(heldCtx, name);
+  render();
+  window.scrollTo(0, 0);
+}
+
+// Charakter wechseln, bearbeiten oder einen neuen anlegen
 function openHeld() {
-  const p = profile();
   const names = Object.keys(state.profiles).sort();
+  if (!names.length) return startSetup();
+  const zeile = (n) => {
+    const q = state.profiles[n];
+    const c = data.characters.find((x) => x.id === q.classId);
+    return `<option value="${esc(n)}" ${n === local.profile ? 'selected' : ''}>${esc(n)}: ${esc(c ? c.name : q.classId)}, Stufe ${q.level}</option>`;
+  };
   heldDialog.innerHTML = `
     <form method="dialog" class="dialog-inhalt">
       <h2 id="heldDialogTitel">Wer plant?</h2>
-      ${names.length ? `
-        <label>Spieler
-          <select name="profil">${names.map((n) => `<option ${n === local.profile ? 'selected' : ''}>${esc(n)}</option>`).join('')}<option value="">Neuer Spieler …</option></select>
-        </label>` : ''}
-      <label class="neu-name" ${names.length ? 'hidden' : ''}>Dein Name
-        <input name="name" maxlength="30" autocomplete="off" placeholder="z. B. Robert">
+      <label for="profilWahl">Charakter
+        <select id="profilWahl" name="profil">${names.map(zeile).join('')}</select>
       </label>
-      <label>Klasse
-        <select name="klasse">${data.characters.map((c) => `<option value="${c.id}" ${p && p.classId === c.id ? 'selected' : ''}>${esc(classLabel(c, p && p.classId === c.id))}</option>`).join('')}</select>
-      </label>
-      <label>Stufe deines Helden
-        <select name="stufe">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((l) => `<option ${p && p.level === l ? 'selected' : ''}>${l}</option>`).join('')}</select>
-      </label>
-      <p class="hinweis">Freischaltbare Klassen stehen mit ihrem Symbol in der Liste, damit nichts verraten wird.</p>
-      <p class="fehlertext" role="alert" hidden></p>
-      <div class="dialog-knoepfe">
-        ${p ? '<button type="button" class="leise" data-act="abbrechen">Abbrechen</button>' : ''}
-        <button type="submit" class="haupt">Übernehmen</button>
+      <div class="dialog-knoepfe spalte">
+        <button type="submit" class="haupt">Diesen Charakter spielen</button>
+        <button type="button" class="leise" data-act="bearbeiten">Diesen Charakter bearbeiten</button>
+        <button type="button" class="leise" data-act="neu">Neuen Charakter anlegen</button>
+        <button type="button" class="leise" data-act="abbrechen">Abbrechen</button>
       </div>
     </form>`;
   const form = $('form', heldDialog);
-  const fill = (name) => {
-    const q = state.profiles[name];
-    form.klasse.value = q ? q.classId : form.klasse.value;
-    form.stufe.value = q ? q.level : 1;
-    $('.neu-name', form).hidden = !!name;
-  };
-  if (form.profil) form.profil.addEventListener('change', () => fill(form.profil.value));
-  form.addEventListener('click', (e) => { if (e.target.dataset.act === 'abbrechen') heldDialog.close(); });
+  form.addEventListener('click', (e) => {
+    const act = e.target.dataset.act;
+    if (!act) return;
+    heldDialog.close();
+    if (act === 'bearbeiten') startSetup(form.profil.value);
+    if (act === 'neu') startSetup();
+  });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    const existing = form.profil ? form.profil.value : '';
-    const name = existing || form.name.value.trim();
-    const err = $('.fehlertext', form);
-    if (!/^[\p{L}\p{N} _.-]{1,30}$/u.test(name)) {
-      err.textContent = 'Bitte einen Namen aus Buchstaben und Ziffern eingeben (höchstens 30 Zeichen).';
-      err.hidden = false;
-      return;
-    }
-    const neu = !state.profiles[name];
-    const q = (state.profiles[name] ||= { classId: form.klasse.value, level: 1, owned: {}, hands: {} });
-    q.classId = form.klasse.value;
-    q.level = Number(form.stufe.value);
-    q.owned ||= {}; q.hands ||= {};
-    heldDefaults(q);
-    if (neu) q.xpGeschaetzt = q.level > 1;
-    local.profile = name;
-    localStorage.setItem('gp.profil', name);
-    saveProfile();
+    selectProfile(form.profil.value);
     heldDialog.close();
     render();
   });
@@ -614,6 +652,8 @@ async function askUpdate(aktion) {
 
 function render() {
   renderHeader();
+  if (local.tab === 'setup' && !local.setup) local.tab = profile() ? 'held' : 'szenario';
+  if (local.tab === 'setup') { renderHeader(); return renderSetup(heldCtx); }
   if (local.tab === 'held' && !profile()) local.tab = 'szenario';
   if (local.tab === 'held') return renderHeld(heldCtx);
   ({ szenario: renderScenario, karten: renderCards, hand: renderHand, plan: renderPlan, notizen: renderNotes })[local.tab]();
@@ -624,7 +664,7 @@ const heldCtx = {
   get data() { return data; },
   get state() { return state; },
   local, view, esc, seg, halfHtml, condName, elemName, setStatus,
-  profile, character, owned, pool, currentProfile, saveProfile, saveShared, render,
+  profile, character, owned, pool, currentProfile, saveProfile, saveShared, render, classLabel, selectProfile,
 };
 
 function setScenario(id) {
@@ -648,6 +688,7 @@ view.addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.go) { local.tab = b.dataset.go; render(); window.scrollTo(0, 0); return; }
+  if (local.tab === 'setup' && setupClick(heldCtx, b)) return;
   if (local.tab === 'held' && heldClick(heldCtx, b)) return;
   if (b.dataset.set) {
     const val = b.dataset.val;
@@ -718,6 +759,7 @@ view.addEventListener('click', (e) => {
 
 view.addEventListener('change', (e) => {
   if (e.target.id === 'szenNr') setScenario(e.target.value);
+  if (local.tab === 'setup' && setupInput(heldCtx, e.target, true)) return;
   if (local.tab === 'held' && heldChange(heldCtx, e.target)) return;
   if (e.target.dataset.check === 'longRest') { local.longRest = e.target.checked; render(); }
   if (e.target.dataset.check === 'tank') { profile().tank = e.target.checked; saveProfile(); render(); }
@@ -725,6 +767,7 @@ view.addEventListener('change', (e) => {
   if (e.target.dataset.range === 'losses') { local.losses = Number(e.target.value); render(); }
 });
 view.addEventListener('input', (e) => {
+  if (local.tab === 'setup' && setupInput(heldCtx, e.target, false)) return;
   if (local.tab === 'held' && heldInput(heldCtx, e.target)) return;
   if (e.target.dataset.range === 'target') e.target.previousElementSibling.textContent = e.target.value;
   if (e.target.id === 'notiz') {
@@ -747,8 +790,10 @@ async function start() {
   state.profiles ||= {};
   if (!state.profiles[local.profile]) local.profile = Object.keys(state.profiles).length === 1 ? Object.keys(state.profiles)[0] : '';
   if (!data.scenarios.some((s) => s.id === local.scenario)) local.scenario = data.scenarios[0].id;
+  // Beim allerersten Start direkt ins Anlegen des Charakters, sonst zur Auswahl
+  if (!Object.keys(state.profiles).length) setupStart(heldCtx);
   render();
-  if (!local.profile) openHeld();
+  if (!local.profile && Object.keys(state.profiles).length) openHeld();
   loadUpdates().then((u) => {
     if (!u) return;
     render();

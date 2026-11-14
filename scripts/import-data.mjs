@@ -311,6 +311,64 @@ const WORLDHAVEN_CODE = {
 };
 const slug = (name) => name.toLowerCase().replace(/'/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+// ---------- Perks (Angriffsmodifikator-Deck) ----------
+const MOD_VALUE = { minus2: -2, minus1: -1, plus0: 0, plus1: 1, plus2: 2, plus3: 3, plus4: 4 };
+const signText = (v) => (v > 0 ? `+${v}` : v < 0 ? `−${-v}` : '+0');
+const ZAHLWORT = ['', 'eine', 'zwei', 'drei', 'vier', 'fünf', 'sechs'];
+
+function modCard(am) {
+  const fx = (am.effects || []).map((e) => {
+    if (e.type === 'condition') return { k: e.value };
+    if (e.type === 'element') return { k: 'element', e: e.value };
+    if (e.type === 'refreshItem') return { k: 'refresh' };
+    return { k: e.type, n: Number(e.value) || 1 };
+  });
+  const v = MOD_VALUE[am.type] ?? 0;
+  const fxKey = fx.map((f) => (f.k === 'element' ? f.e : f.n ? `${f.k}${f.n}` : f.k)).join('+');
+  const fxText = fx.map((f) => {
+    if (f.k === 'element') return ELEM(f.e);
+    if (f.k === 'refresh') return 'Gegenstand auffrischen';
+    if (f.k === 'target') return 'zusätzlichem Ziel';
+    if (f.k === 'heal') return `Heilung ${f.n} für dich`;
+    if (f.k === 'shield') return `Schild ${f.n} für dich`;
+    if (f.k === 'pierce') return `Durchbohren ${f.n}`;
+    if (f.k === 'push') return `Schieben ${f.n}`;
+    if (f.k === 'pull') return `Ziehen ${f.n}`;
+    return COND(f.k);
+  }).join(' und ');
+  return {
+    v, r: !!am.rolling, fx,
+    k: `${v >= 0 ? '+' : ''}${v}${am.rolling ? 'R' : ''}${fxKey ? `:${fxKey}` : ''}`,
+    label: `${am.rolling ? 'rollende ' : ''}${signText(v)}`, fxText,
+  };
+}
+// "zwei rollende +1-Karten mit Betäubung"
+const modPhrase = (entry) => {
+  const c = modCard(entry.attackModifier);
+  return `${ZAHLWORT[entry.count] || entry.count} ${c.label}-Karte${entry.count > 1 ? 'n' : ''}${c.fxText ? ` mit ${c.fxText}` : ''}`;
+};
+const modKeys = (list) => list.map((e) => `${e.count}x${modCard(e.attackModifier).k}`).join(',');
+const expand = (list) => list.flatMap((e) => Array.from({ length: e.count }, () => { const { v, r, fx, k } = modCard(e.attackModifier); return { v, r, fx, k }; }));
+
+function perkOf(p) {
+  const cards = p.cards || [];
+  const item = /ignoreNegativeItem/.test(p.custom || '');
+  const scenario = /ignoreNegativeScenario|ignoreScenario/.test(p.custom || '');
+  const removed = p.type === 'remove' ? cards : p.type === 'replace' ? cards.slice(0, 1) : [];
+  const added = p.type === 'remove' ? [] : p.type === 'replace' ? cards.slice(1) : cards;
+  const parts = [];
+  if (item) parts.push('Ignoriere negative Effekte von Gegenständen');
+  if (scenario) parts.push('Ignoriere negative Szenarioeffekte');
+  if (p.type === 'remove') parts.push(`Entferne ${removed.map(modPhrase).join(' und ')}`);
+  else if (p.type === 'replace') parts.push(`Ersetze ${removed.map(modPhrase).join(' und ')} durch ${added.map(modPhrase).join(' und ')}`);
+  else if (added.length) parts.push(`${item || scenario ? 'füge' : 'Füge'} ${added.map(modPhrase).join(' und ')} hinzu`);
+  const key = [
+    item ? 'item' : '', scenario ? 'scen' : '',
+    p.type === 'remove' ? `rm:${modKeys(removed)}` : p.type === 'replace' ? `re:${modKeys(removed)}>${modKeys(added)}` : added.length ? `add:${modKeys(added)}` : '',
+  ].filter(Boolean).join('+');
+  return { key, text: parts.join(' und '), count: p.count || 1, remove: expand(removed), add: expand(added), item, scenario };
+}
+
 const characters = [];
 for (const file of readDir(join(GH, 'character'))) {
   const c = readJson(join(GH, 'character', file));
@@ -326,6 +384,7 @@ for (const file of readDir(join(GH, 'character'))) {
     handSize: c.handSize,
     color: c.color,
     health: (c.stats || []).sort((a, b) => a.level - b.level).map((s) => s.health),
+    perks: (c.perks || []).map(perkOf),
     cards: deck.abilities.map((a) => ({
       id: a.cardId,
       name: firstOf(['ability', a.name], [own, de]) || a.name,

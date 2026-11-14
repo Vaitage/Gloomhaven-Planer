@@ -6,10 +6,12 @@ Vorbereitungshilfe für das Brettspiel Gloomhaven. Die App ersetzt nichts am Tis
 - **Karten**: Dein Kartenvorrat, sortiert nach Nutzen für genau dieses Szenario, mit Begründung zu jeder Karte.
 - **Hand**: Handvorschlag, Initiative-Übersicht, Element-Bilanz, Warnungen (zu wenig Bewegung usw.) und Ausdauer-Rechner.
 - **Plan**: Rundenplan für deine Hand: welche zwei Karten pro Runde (oben/unten), mit welcher Initiative und wie oft du damit vor welchem Gegnertyp dran bist, wann rasten, wen zuerst angreifen. Die App schätzt die Länge des Szenarios und plant so viele Verlustaktionen ein, wie dafür noch reichen.
-- **Charakterbildschirm** (Tipp auf den Namen oben links): Erfahrungsbalken, Gold, Ausrüstung mit Suche über alle Gegenstände, Kaufempfehlung für dein Gold, Berater für den Stufenaufstieg und Kostenrechner für Verbesserungen.
+- **Charakterbildschirm** (Tipp auf den Namen oben links): Erfahrungsbalken, Gold, Ausrüstung mit Suche über alle Gegenstände, Kaufempfehlung für dein Gold, Berater für den Stufenaufstieg (Karte und Perk), Angriffsdeck mit allen Perks und Kostenrechner für Verbesserungen.
+- **Erst-Setup**: Beim ersten Start führt die App durch das Anlegen eines Charakters, auch eines schon länger gespielten: Stufe, Erfahrung, Gold, gewählte Karten, Perks und Ausrüstung. Weitere Charaktere legst du im Charakterbildschirm über „Wechseln“ an.
+- **Farbschema**: Die App färbt sich nach der Klasse des gewählten Charakters.
 - **Notizen**: Gemeinsame Notizen pro Szenario für die ganze Gruppe. Hier tragt ihr auch ein, wie viele Runden ein Szenario gedauert hat. Daraus lernt die Schätzung der Szenariolänge.
 
-Jeder Spieler legt ein eigenes Profil an (Name, Klasse, Stufe). Freischaltbare Klassen stehen nur mit ihrem Symbol in der Auswahl.
+Jeder Spieler legt seinen eigenen Charakter an. Alle 17 Klassen des Grundspiels sind enthalten, jede mit Aufstiegs- und Perk-Empfehlungen aus einem Guide. Freischaltbare Klassen stehen nur mit ihrem Symbol in der Auswahl.
 
 ## Auf dem Raspberry Pi starten
 
@@ -56,7 +58,8 @@ npm start                       # http://localhost:8090
 | `public/logic.js` | Rechenlogik: Szenario-Profil, Kartenbewertung, Handvorschlag, Ausdauer |
 | `public/app.js`, `style.css` | Oberfläche (ohne Build-Schritt) |
 | `public/held.js` | Charakterbildschirm: Erfahrung, Gold, Ausrüstung, Aufstieg, Verbesserungen |
-| `public/tipps.js` | Empfehlungen aus Guides, in eigenen Worten |
+| `public/setup.js` | Erst-Setup zum Anlegen und Bearbeiten von Charakteren |
+| `public/tipps.js` | Empfehlungen aus Guides für alle Klassen, in eigenen Worten |
 | `server.mjs` | liefert die App aus und speichert den Stand als JSON |
 | `scripts/uebersetzungen/de.json` | eigene deutsche Texte, wo GHS nur englische hat |
 | `tools/pi/` | Update-Dienst für den Pi und sein Einrichtungsskript |
@@ -71,13 +74,14 @@ npm start                       # http://localhost:8090
 - Die Szenariolänge ist eine Schätzung aus Gegnerleben und üblichem Gruppenschaden. Sie wird besser, je mehr Partien ihr eintragt.
 - Gegenstände werden über Stichworte aus ihrem Regeltext eingeordnet, das ist grob. Bei 17 Gegenständen fehlt in den Daten der deutsche Text, sie erscheinen englisch.
 - Verbesserungskosten folgen der Tabelle im Regelheft (1. Auflage). Verbesserungsfelder von Beschwörungen fehlen.
-- Die Aufstiegsempfehlung folgt bei der Sonnenhüterin einem Guide, bei allen anderen Klassen nur der Rechnung. Die Rechnung bewertet vor allem Zahlenwerte, Sondertexte kann sie nicht einschätzen.
-- Angriffsmodifikatoren und Perks fehlen.
+- Die Empfehlungen für Karten und Perks beim Aufstieg folgen je Klasse einem einzelnen Guide. Daneben steht die eigene Rechnung, die vor allem Zahlenwerte bewertet und Sondertexte nicht einschätzen kann.
+- Das Angriffsdeck rechnet mit Mittelwerten über das volle Deck. Vorteil, Nachteil, Segen und Fluch sind nicht eingerechnet.
+- Deutsche Sondertexte gibt es bisher nur für die Sonnenhüterin. Bei den anderen Klassen sind Standardaktionen deutsch, Sondertexte und die meisten Kartennamen englisch.
 
 ## Quellen der Empfehlungen
 
-- Kartenwahl und Gegenstände der Sonnenhüterin: [Sunkeeper-Guide von gameslikefinder.com](https://gameslikefinder.com/article/gloomhaven-sunkeeper-guide/)
-- Verbesserungen der Sonnenhüterin: Guide von u/Gripeaway auf r/Gloomhaven
+- Kartenwahl, Perk-Reihenfolge, Gegenstände und Verbesserungen aller Klassen: die Klassen-Guides von [gameslikefinder.com](https://gameslikefinder.com/article/gloomhaven-classes/)
+- Verbesserungen der Sonnenhüterin zusätzlich: Guide von u/Gripeaway auf r/Gloomhaven
 
 Die Empfehlungen sind in eigenen Worten zusammengefasst (`public/tipps.js`).
 

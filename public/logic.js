@@ -937,3 +937,111 @@ export function shopAdvice(data, p, opts = {}) {
     .map((item) => ({ item, ...scoreItem(item, p, cn, fit), affordable: item.cost <= gold }))
     .sort((a, b) => b.score - a.score);
 }
+
+// ---------- Angriffsmodifikator-Deck ----------
+
+// Das Grunddeck: 6× +0, 5× +1, 5× −1, je einmal +2, −2, ×2 und Fehlschlag
+export function baseDeck() {
+  const card = (v, n) => Array.from({ length: n }, () => ({ v, k: `${v >= 0 ? '+' : ''}${v}` }));
+  return [...card(0, 6), ...card(1, 5), ...card(-1, 5), ...card(2, 1), ...card(-2, 1), { v: 0, x: 2, k: 'x2' }, { v: 0, x: 0, k: 'x0' }];
+}
+
+// Baut das Deck aus den gewählten Perks. "taken" zählt je Perk, wie oft er genommen wurde.
+// "itemMinus" sind −1-Karten aus getragener Rüstung.
+export function buildDeck(perks, taken = [], itemMinus = 0) {
+  const cards = baseDeck();
+  let ignoreItem = false;
+  let ignoreScenario = false;
+  (perks || []).forEach((perk, i) => {
+    const times = Math.min(perk.count, Math.max(0, taken[i] || 0));
+    for (let t = 0; t < times; t++) {
+      for (const c of perk.remove) {
+        const at = cards.findIndex((d) => d.k === c.k);
+        if (at >= 0) cards.splice(at, 1);
+      }
+      for (const c of perk.add) cards.push({ v: c.v, r: c.r, fx: c.fx, k: c.k });
+      if (perk.item) ignoreItem = true;
+      if (perk.scenario) ignoreScenario = true;
+    }
+  });
+  if (!ignoreItem) for (let i = 0; i < itemMinus; i++) cards.push({ v: -1, k: '-1', item: true });
+  return { cards, ignoreItem, ignoreScenario };
+}
+
+// Was ein Zusatzeffekt auf einer Modifikatorkarte ungefähr wert ist (in Schadenspunkten)
+const FX_VALUE = {
+  stun: 3, disarm: 2.5, immobilize: 1.8, muddle: 1.5, wound: 1.5, poison: 1.5, curse: 1.5, invisible: 2.5,
+  target: 3, heal: 0.6, shield: 1.2, pierce: 0.2, push: 0.3, pull: 0.3, element: 0.3, refresh: 2,
+};
+const fxValue = (f) => (FX_VALUE[f.k] ?? 0.5) * (['heal', 'pierce', 'push', 'pull'].includes(f.k) ? f.n || 1 : 1);
+
+// Kennzahlen des Decks für einen Angriff mit Grundwert "attack".
+// Rollende Karten werden weitergezogen: jede kommt mit Wahrscheinlichkeit 1/(N+1)
+// vor der ersten nicht rollenden Karte (N = Zahl der nicht rollenden Karten).
+export function deckStats(deck, attack = 3) {
+  const cards = deck.cards;
+  const term = cards.filter((c) => !c.r);
+  const roll = cards.filter((c) => c.r);
+  const n = Math.max(1, term.length);
+  const rollBonus = roll.reduce((a, c) => a + c.v, 0) / (n + 1);
+  let sum = 0;
+  for (const c of term) sum += c.x === 2 ? 2 * (attack + rollBonus) : c.x === 0 ? 0 : Math.max(0, attack + rollBonus + c.v);
+  const share = (f) => term.filter(f).length / n;
+  const effects = {};
+  let effectValue = 0;
+  for (const c of cards) {
+    const p = c.r ? 1 / (n + 1) : 1 / n;
+    for (const f of c.fx || []) {
+      const key = f.k === 'element' ? `element:${f.e}` : f.n ? `${f.k}:${f.n}` : f.k;
+      effects[key] = (effects[key] || 0) + p;
+      effectValue += p * fxValue(f);
+    }
+  }
+  const counts = {};
+  for (const c of cards) counts[c.k] = (counts[c.k] || 0) + 1;
+  return {
+    size: cards.length, rolling: roll.length, avg: sum / n, mod: sum / n - attack, rollBonus,
+    miss: share((c) => c.x === 0), crit: share((c) => c.x === 2),
+    worse: share((c) => c.x === 0 || (c.x == null && c.v < 0)),
+    better: share((c) => c.x === 2 || (c.x == null && c.v > 0)),
+    effects, effectValue, counts,
+  };
+}
+
+// Welcher Perk bringt als nächster am meisten? Verglichen wird das Deck vorher und nachher:
+// mittlerer Schaden, Wert der Zusatzeffekte und wie oft eine schlechte Karte kommt.
+export function perkAdvice(perks, taken = [], itemMinus = 0, attack = 3) {
+  const now = deckStats(buildDeck(perks, taken, itemMinus), attack);
+  const out = [];
+  (perks || []).forEach((perk, index) => {
+    if ((taken[index] || 0) >= perk.count) return;
+    const next = [...taken];
+    next[index] = (next[index] || 0) + 1;
+    const after = deckStats(buildDeck(perks, next, itemMinus), attack);
+    const dAvg = after.avg - now.avg;
+    const dFx = after.effectValue - now.effectValue;
+    const dWorse = now.worse - after.worse;
+    let gain = dAvg + dFx + 0.5 * dWorse;
+    if (perk.scenario) gain += 0.05; // lässt sich nicht rechnen, hilft nur in manchen Szenarien
+    out.push({ index, perk, gain, dAvg, dFx, dWorse, before: now, after });
+  });
+  return { now, list: out.sort((a, b) => b.gain - a.gain) };
+}
+
+// Nächster Perk laut Guide: der erste aus der Reihenfolge, von dem noch einer frei ist.
+// Ein Tausch-Perk wird übersprungen, solange die zu tauschende Karte nicht im Deck ist.
+export function guidePerk(perks, taken = [], order = []) {
+  const deck = buildDeck(perks, taken).cards;
+  for (const key of order) {
+    const index = (perks || []).findIndex((p) => p.key === key);
+    if (index < 0 || (taken[index] || 0) >= perks[index].count) continue;
+    const need = {};
+    for (const c of perks[index].remove) need[c.k] = (need[c.k] || 0) + 1;
+    if (Object.entries(need).some(([kk, n]) => deck.filter((d) => d.k === kk).length < n)) continue;
+    return index;
+  }
+  return -1;
+}
+
+// Wie viele Perks stehen einem Charakter zu? Einer je Stufenaufstieg, einer je drei Kampfziel-Haken.
+export const perksAllowed = (level, checks = 0) => Math.max(0, level - 1) + Math.floor(Math.max(0, checks) / 3);
