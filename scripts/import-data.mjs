@@ -9,6 +9,7 @@
 
 import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const ghsDir = process.argv[2];
 const outFile = process.argv[3] || 'data/gamedata.json';
@@ -27,6 +28,8 @@ const de = maybe(join(GH, 'label', 'de.json'));
 const en = maybe(join(GH, 'label', 'en.json'));
 const deSp = maybe(join(GH, 'label', 'spoiler', 'de.json'));
 const enSp = maybe(join(GH, 'label', 'spoiler', 'en.json'));
+// Eigene Übersetzungen haben Vorrang vor allem, was GHS liefert
+const own = maybe(join(dirname(fileURLToPath(import.meta.url)), 'uebersetzungen', 'de.json'));
 const appDe = maybe(join(ghsDir, 'src', 'assets', 'locales', 'de.json')).game || {};
 
 const str = (v) => (v && typeof v === 'object' ? v[''] : v);
@@ -70,7 +73,7 @@ function resolveText(text, depth = 0) {
       if (p[0] === 'data') {
         if (depth > 3) return '';
         const path = p.slice(1);
-        const v = firstOf(path, [de, deSp, en, enSp]);
+        const v = firstOf(path, [own, de, deSp, en, enSp]);
         return v ? resolveText(v, depth + 1) : '';
       }
       if (p[0] !== 'game') return '';
@@ -301,7 +304,7 @@ for (const file of readDir(join(GH, 'character'))) {
     health: (c.stats || []).sort((a, b) => a.level - b.level).map((s) => s.health),
     cards: deck.abilities.map((a) => ({
       id: a.cardId,
-      name: firstOf(['ability', a.name], [de]) || a.name,
+      name: firstOf(['ability', a.name], [own, de]) || a.name,
       nameEn: a.name,
       level: a.level === 'X' ? 'X' : Number(a.level),
       initiative: a.initiative,

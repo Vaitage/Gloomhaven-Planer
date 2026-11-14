@@ -8,11 +8,19 @@ Gloomhaven-Planer: Web-App zur Szenario-Vorbereitung und Handplanung, läuft als
 - Der Import ist gegen den GHS-Commit im Dockerfile (`GHS_REF`) getestet. Bei neuerem Stand zuerst Import und `npm test` lokal prüfen.
 - Rechenlogik gehört in `public/logic.js` und bekommt einen Test in `test/`. Jede Bewertungsregel liefert einen Begründungstext.
 - Oberfläche und Texte auf Deutsch, für das Handy zuerst.
+- Eigene Übersetzungen stehen in `scripts/uebersetzungen/de.json` (Aufbau wie die GHS-Label-Dateien, hat Vorrang). Gedruckte deutsche Kartennamen kommen dort unter `ability` hinein (englischer Name -> deutscher Name).
+- Commit-Titel verständlich auf Deutsch schreiben: Die App zeigt sie dem Nutzer unter „App aktualisieren“ als Änderungsliste.
+- Jeder Push auf `main` ist für den Nutzer per Knopf einspielbar. Vor dem Push `npm test` und den Import laufen lassen.
 
 ## Erste Inbetriebnahme auf dem Pi
 1. `docker compose up -d --build` (der Docker-Build wurde vor dem ersten Push nicht ausgeführt, nur seine Einzelschritte. Bei Fehlern zuerst die Stufe `daten` prüfen).
 2. `curl http://localhost:8090/api/health` muss `{"ok":true}` liefern.
-3. Falls Port 8090 belegt ist, in `docker-compose.yml` ändern.
+3. Falls Port 8090 belegt ist: `PORT=<frei>` in die Datei `.env` schreiben.
+4. `bash tools/pi/updates-einrichten.sh` richtet den Update-Knopf ein (Cron-Job, `UPDATES_IN_APP=1` in `.env`). In der App erscheint unter „Notizen“ der Bereich „App aktualisieren“.
+5. Daten liegen in `./data` (Bind-Mount). Der Container läuft als Benutzer 1000, der Ordner muss für ihn schreibbar sein.
+
+## Update-Dienst
+App und Dienst sprechen nur über `data/update/anfrage` (schreibt die App: `pruefen` oder `aktualisieren`) und `data/update/status.json` (schreibt `tools/pi/selbst-aktualisieren.sh`). Der Ablauf des Dienstes wurde mit nachgestelltem Git-Remote und Docker getestet (Erfolg, fehlgeschlagener Build mit Rückfall, ungültige Anfrage), auf einem echten Pi noch nicht.
 
 ## Offene Ideen
 - Angriffsmodifikator-Deck mit Perks (Daten stehen in GHS unter `character/<klasse>.json`).

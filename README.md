@@ -19,9 +19,21 @@ docker compose up -d --build
 
 Danach im Browser `http://<adresse-des-pi>:8090` öffnen. Auf dem iPhone über „Teilen → Zum Home-Bildschirm“ als App ablegen.
 
-Der Build braucht Internet: Er holt die Spieldaten aus dem Projekt [Gloomhaven Secretariat](https://github.com/Lurkars/gloomhavensecretariat). Profile, Hände und Notizen liegen im Docker-Volume `planer-daten`.
+Der Build braucht Internet: Er holt die Spieldaten aus dem Projekt [Gloomhaven Secretariat](https://github.com/Lurkars/gloomhavensecretariat). Profile, Hände und Notizen liegen im Ordner `data/` neben dem Repo.
 
-Aktualisieren: `git pull && docker compose up -d --build`
+### Updates per Knopf in der App
+
+Einmal auf dem Pi einrichten:
+
+```bash
+bash tools/pi/updates-einrichten.sh
+```
+
+Danach gibt es in der App unter „Notizen“ ganz unten den Bereich „App aktualisieren“. Der Pi schaut stündlich bei GitHub nach einem neuen Stand von `main`. „Jetzt aktualisieren“ holt ihn, baut neu und startet die App. Startet der neue Stand nicht, läuft die App mit dem vorherigen weiter. Automatisch eingespielt wird nie.
+
+So funktioniert es: Die App im Container kann am Pi nichts ändern. Sie legt nur das Wort `pruefen` oder `aktualisieren` in `data/update/anfrage` ab. Ein Cron-Job (`~/.local/bin/gloomhaven-update.sh`, jede Minute) holt es ab und schreibt seinen Stand nach `data/update/status.json`. Protokoll: `~/gloomhaven-update.log`. Ausschalten: `crontab -e` und die Zeile mit `gloomhaven-update.sh` löschen.
+
+Von Hand aktualisieren geht weiterhin: `git pull && docker compose up -d --build`
 
 ## Ohne Docker entwickeln
 
@@ -42,12 +54,14 @@ npm start                       # http://localhost:8090
 | `public/logic.js` | Rechenlogik: Szenario-Profil, Kartenbewertung, Handvorschlag, Ausdauer |
 | `public/app.js`, `style.css` | Oberfläche (ohne Build-Schritt) |
 | `server.mjs` | liefert die App aus und speichert den Stand als JSON |
-| `test/` | Tests der Rechenlogik |
+| `scripts/uebersetzungen/de.json` | eigene deutsche Texte, wo GHS nur englische hat |
+| `tools/pi/` | Update-Dienst für den Pi und sein Einrichtungsskript |
+| `test/` | Tests für Rechenlogik und Server |
 
 ## Grenzen
 
 - Die Bewertung besteht aus Faustregeln, keine Simulation. Sie zeigt ihre Gründe an, damit ihr sie einschätzen könnt. Karten mit reinem Sondertext kann sie nicht ausrechnen.
-- Kartennamen und Sondertexte der freischaltbaren Klassen sind englisch, weil GHS dafür keine deutsche Übersetzung enthält. Kartennummer und Initiative stimmen mit den gedruckten Karten überein.
+- Kartennamen der freischaltbaren Klassen sind englisch, weil GHS dafür keine deutsche Übersetzung enthält. Kartennummer und Initiative stimmen mit den gedruckten Karten überein. Die Sondertexte der Sonnenhüterin sind selbst übersetzt (`scripts/uebersetzungen/de.json`), der Wortlaut kann von den gedruckten Karten abweichen. Bei den anderen freischaltbaren Klassen sind sie noch englisch.
 - Sonderregeln der Szenarien (Ziele, Fallen, nachrückende Gegner) sind nicht berücksichtigt, nur die Gegner aus der Aufstellung.
 - Gegenstände, Angriffsmodifikatoren und Verbesserungen fehlen noch.
 

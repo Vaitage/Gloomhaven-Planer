@@ -1,5 +1,5 @@
 node_modules
-data/gamedata.json
-data/state.json
-data/*.tmp
+.env
+data/*
+!data/.gitkeep
 .DS_Store

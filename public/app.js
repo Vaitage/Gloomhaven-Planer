@@ -81,7 +81,9 @@ function renderHeader() {
   $('#heldName').textContent = c ? c.name : 'Held wählen';
   $('#heldSub').textContent = p && c ? `Stufe ${p.level}, ${local.profile}` : 'Tippen zum Einrichten';
   document.documentElement.style.setProperty('--klasse', c ? c.color : '#c9a24a');
+  const neu = !!(updates && updates.status && updates.status.verfuegbar);
   document.querySelectorAll('.reiter button').forEach((b) => {
+    if (b.dataset.tab === 'notizen') b.innerHTML = neu ? 'Notizen <span class="punkt" title="Neue Version verfügbar"></span><span class="sr">, neue Version verfügbar</span>' : 'Notizen';
     if (b.dataset.tab === local.tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
 }
@@ -372,7 +374,79 @@ function renderNotes() {
       </label>
       <p class="hinweis">Notizen gelten für die ganze Gruppe und liegen auf eurem Server.</p>
     </section>
-    ${others.length ? `<section><h2>Weitere Notizen</h2>${others.map(([id, t]) => `<article class="notiz"><button type="button" class="leise" data-act="szen" data-id="${id}">Szenario ${id}</button><p>${esc(t)}</p></article>`).join('')}</section>` : ''}`;
+    ${others.length ? `<section><h2>Weitere Notizen</h2>${others.map(([id, t]) => `<article class="notiz"><button type="button" class="leise" data-act="szen" data-id="${id}">Szenario ${id}</button><p>${esc(t)}</p></article>`).join('')}</section>` : ''}
+    ${updatesHtml()}`;
+}
+
+// ---------- Updates aus der App ----------
+
+let updates = null; // Antwort von /api/updates, null = nicht eingerichtet
+let updatesPoll = null;
+const datum = (iso) => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+const ERGEBNIS = {
+  aktualisiert: 'Update eingespielt.', aktuell: 'Die App ist bereits auf dem neuesten Stand.',
+  zurueckgenommen: 'Der neue Stand ließ sich nicht starten. Die App läuft weiter mit dem vorherigen Stand.',
+  kein_ff: 'Der Stand auf GitHub passt nicht zur installierten Version. Bitte von Hand prüfen.',
+  offline: 'GitHub war nicht erreichbar. Internetverbindung des Pi prüfen.',
+};
+
+async function loadUpdates() {
+  try { updates = await request('/api/updates'); } catch { /* während des Neustarts oder nicht eingerichtet */ }
+  return updates;
+}
+
+function updatesHtml() {
+  if (!updates) return '';
+  const s = updates.status;
+  let body;
+  if (!s) {
+    body = '<p class="hinweis">Der Update-Dienst auf dem Pi hat sich noch nicht gemeldet. Nach dem Einrichten dauert das bis zu einer Minute.</p>';
+  } else {
+    const busy = s.laeuft || updates.anfrage;
+    const inst = s.installiert ? `<p>Installiert: <b>${esc(s.installiert.titel)}</b><br><span class="hinweis">Stand ${esc(s.installiert.commit)} vom ${datum(s.installiert.datum)}</span></p>` : '';
+    const neu = s.verfuegbar ? `
+      <p class="update-neu">Neue Version verfügbar</p>
+      <ul class="aenderungen">${(s.aenderungen || []).map((a) => `<li>${esc(a.titel)}</li>`).join('')}</ul>` : '<p class="gut-text">Die App ist auf dem neuesten Stand.</p>';
+    const last = s.letztes && ERGEBNIS[s.letztes.ergebnis] ? `<p class="hinweis">Letzter Vorgang (${datum(s.letztes.zeit)}): ${ERGEBNIS[s.letztes.ergebnis]}${s.letztes.details ? ' ' + esc(s.letztes.details) : ''}</p>` : '';
+    const still = updates.dienst_aktiv === false ? '<p class="fehlertext">Der Update-Dienst auf dem Pi meldet sich nicht mehr. Cron-Eintrag prüfen (crontab -l).</p>' : '';
+    const state = s.laeuft ? 'Update wird eingespielt, das dauert ein paar Minuten …' : updates.anfrage === 'aktualisieren' ? 'Update angefordert, startet innerhalb einer Minute …' : updates.anfrage === 'pruefen' ? 'Prüfung angefordert, dauert bis zu einer Minute …' : '';
+    body = `${inst}${busy ? '' : neu}${state ? `<p class="update-laeuft" role="status">${state}</p>` : ''}${still}${last}
+      <div class="knopfreihe">
+        ${s.verfuegbar && !busy ? '<button type="button" class="haupt" data-act="upd-aktualisieren">Jetzt aktualisieren</button>' : ''}
+        ${busy ? '' : '<button type="button" class="leise" data-act="upd-pruefen">Nach Updates suchen</button>'}
+      </div>
+      ${s.geprueft ? `<p class="hinweis">Zuletzt bei GitHub nachgesehen: ${datum(s.geprueft * 1000)}</p>` : ''}`;
+  }
+  return `<section id="updates"><h2>App aktualisieren</h2>${body}</section>`;
+}
+
+function watchUpdates() {
+  clearInterval(updatesPoll);
+  const before = updates?.status?.installiert?.commit;
+  let ticks = 0;
+  updatesPoll = setInterval(async () => {
+    ticks++;
+    await loadUpdates();
+    const s = updates?.status;
+    const done = s && !s.laeuft && !updates.anfrage;
+    if (done || ticks > 120) {
+      clearInterval(updatesPoll);
+      // Neuer Stand eingespielt: Seite neu laden, damit die neue Oberfläche kommt
+      if (done && s.installiert && before && s.installiert.commit !== before) return location.reload();
+    }
+    renderHeader();
+    if (local.tab === 'notizen' && document.activeElement?.id !== 'notiz') render();
+  }, 5000);
+}
+
+async function askUpdate(aktion) {
+  try {
+    updates = await request('/api/updates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ aktion }) });
+    watchUpdates();
+  } catch (e) {
+    setStatus('Update-Anfrage fehlgeschlagen.', true);
+  }
+  render();
 }
 
 // ---------- Darstellung und Ereignisse ----------
@@ -412,6 +486,8 @@ view.addEventListener('click', (e) => {
   }
   const act = b.dataset.act;
   if (act === 'held') return openHeld();
+  if (act === 'upd-pruefen') return askUpdate('pruefen');
+  if (act === 'upd-aktualisieren') return askUpdate('aktualisieren');
   if (act === 'szen-') return setScenario(local.scenario - 1);
   if (act === 'szen+') return setScenario(local.scenario + 1);
   if (act === 'szen') return setScenario(b.dataset.id);
@@ -478,5 +554,10 @@ async function start() {
   if (!data.scenarios.some((s) => s.id === local.scenario)) local.scenario = data.scenarios[0].id;
   render();
   if (!local.profile) openHeld();
+  loadUpdates().then((u) => {
+    if (!u) return;
+    render();
+    if (u.anfrage || u.status?.laeuft) watchUpdates();
+  });
 }
 start();

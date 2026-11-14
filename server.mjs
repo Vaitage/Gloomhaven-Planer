@@ -14,6 +14,31 @@ const GAMEDATA = process.env.GAMEDATA || join(ROOT, 'data', 'gamedata.json');
 const STATE_FILE = join(DATA_DIR, 'state.json');
 const MAX_BODY = 512 * 1024;
 
+// Updates aus der App (nur mit UPDATES_IN_APP=1). Der Container kann am Pi nichts
+// ändern. Er legt nur ein Wort in <data>/update/anfrage ab, das der Update-Dienst
+// auf dem Pi (tools/pi/selbst-aktualisieren.sh, per Cron) abholt. Der Dienst
+// schreibt seinen Stand nach <data>/update/status.json.
+const UPDATES_AN = /^(1|true|ja|yes)$/i.test((process.env.UPDATES_IN_APP || '').trim());
+const UPDATE_DIR = join(DATA_DIR, 'update');
+const UPDATE_AKTIONEN = ['pruefen', 'aktualisieren'];
+const DIENST_STILL_SEKUNDEN = 15 * 60;
+
+async function updateAntwort() {
+  let status = null;
+  try {
+    const d = JSON.parse(await readFile(join(UPDATE_DIR, 'status.json'), 'utf8'));
+    if (d && typeof d === 'object' && !Array.isArray(d)) status = d;
+  } catch { /* noch kein Status */ }
+  let anfrage = null;
+  try {
+    const wort = (await readFile(join(UPDATE_DIR, 'anfrage'), 'utf8')).trim();
+    if (UPDATE_AKTIONEN.includes(wort)) anfrage = wort;
+  } catch { /* keine offene Anfrage */ }
+  const dienst_aktiv = status && typeof status.lebenszeichen === 'number'
+    ? Date.now() / 1000 - status.lebenszeichen < DIENST_STILL_SEKUNDEN : null;
+  return { status, anfrage, dienst_aktiv };
+}
+
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png',
@@ -64,6 +89,19 @@ async function api(req, res, path) {
   if (path === '/api/data' && req.method === 'GET') {
     if (!existsSync(GAMEDATA)) return send(res, 503, { error: 'Spieldaten fehlen. Bitte "npm run import -- <pfad-zu-ghs>" ausführen.' });
     return send(res, 200, await readFile(GAMEDATA));
+  }
+  if (path === '/api/updates') {
+    if (!UPDATES_AN) return send(res, 404, { error: 'Updates aus der App sind nicht eingerichtet' });
+    if (req.method === 'GET') return send(res, 200, await updateAntwort());
+    if (req.method === 'POST') {
+      const body = await readBody(req);
+      if (!isObject(body) || !UPDATE_AKTIONEN.includes(body.aktion)) return send(res, 400, { error: 'Ungültige Aktion' });
+      await mkdir(UPDATE_DIR, { recursive: true });
+      const tmp = join(UPDATE_DIR, 'anfrage.tmp');
+      await writeFile(tmp, body.aktion + '\n');
+      await rename(tmp, join(UPDATE_DIR, 'anfrage')); // nie halb geschrieben
+      return send(res, 200, await updateAntwort());
+    }
   }
   if (path === '/api/state' && req.method === 'GET') return send(res, 200, state);
   if (path === '/api/state/shared' && req.method === 'PUT') {
