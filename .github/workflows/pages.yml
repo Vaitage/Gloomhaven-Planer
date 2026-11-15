@@ -1,0 +1,53 @@
+# Baut die Geräte-Variante (ohne Server) und stellt sie über GitHub Pages bereit.
+# Einmalig nötig: im Repo unter Settings > Pages als Quelle "GitHub Actions" wählen.
+name: App für Handy bereitstellen
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  bauen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Spieldaten aus Gloomhaven Secretariat holen
+        run: |
+          REF=$(sed -n 's/^ARG GHS_REF=//p' Dockerfile)
+          git init -q ghs && cd ghs
+          git remote add origin https://github.com/Lurkars/gloomhavensecretariat.git
+          git sparse-checkout set data/gh src/assets/locales
+          git fetch -q --depth 1 --filter=blob:none origin "$REF"
+          git checkout -q FETCH_HEAD
+      - name: Spieldaten aufbereiten
+        run: node scripts/import-data.mjs ghs data/gamedata.json
+      - name: Tests
+        run: npm test
+      - name: Geräte-Variante bauen
+        run: node scripts/build-statisch.mjs data/gamedata.json _site "$GITHUB_SHA"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  bereitstellen:
+    needs: bauen
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

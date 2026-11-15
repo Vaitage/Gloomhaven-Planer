@@ -19,6 +19,11 @@ Gloomhaven-Planer: Web-App zur Szenario-Vorbereitung und Handplanung, läuft als
 4. `bash tools/pi/updates-einrichten.sh` richtet den Update-Knopf ein (Cron-Job, `UPDATES_IN_APP=1` in `.env`). In der App erscheint unter „Notizen“ der Bereich „App aktualisieren“.
 5. Daten liegen in `./data` (Bind-Mount). Der Container läuft als Benutzer 1000, der Ordner muss für ihn schreibbar sein.
 
+## Handy-Variante (GitHub Pages)
+Dieselbe Oberfläche ohne Server, in Chrome als App installierbar: `https://vaitage.github.io/Gloomhaven-Planer/`. `.github/workflows/pages.yml` baut sie bei jedem Push auf `main` mit `scripts/build-statisch.mjs` (setzt `<meta name="planer-modus">` auf `statisch` und die Version in `sw.js`). In dieser Betriebsart speichert `request()` in `app.js` den Stand im Gerätespeicher (`gp.stand`), ein Service Worker macht sie offline nutzbar, den Update-Bereich gibt es dort nicht. Pfade in `public/` müssen relativ bleiben, weil die Seite unter `/Gloomhaven-Planer/` liegt. Neue Dateien in `public/` auch in `KERN` in `sw.js` eintragen.
+
+Einmalig nötig: Settings → Pages → Source „GitHub Actions“ (oder `gh api -X POST repos/Vaitage/Gloomhaven-Planer/pages -f build_type=workflow`). Lokal getestet (Speichern, Neuladen, offline), auf GitHub Pages und einem echten Android-Gerät noch nicht.
+
 ## Update-Dienst
 App und Dienst sprechen nur über `data/update/anfrage` (schreibt die App: `pruefen` oder `aktualisieren`) und `data/update/status.json` (schreibt `tools/pi/selbst-aktualisieren.sh`). Der Ablauf des Dienstes wurde mit nachgestelltem Git-Remote und Docker getestet (Erfolg, fehlgeschlagener Build mit Rückfall, ungültige Anfrage), auf einem echten Pi noch nicht.
 

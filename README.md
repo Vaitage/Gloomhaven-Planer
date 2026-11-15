@@ -13,6 +13,23 @@ Vorbereitungshilfe für das Brettspiel Gloomhaven. Die App ersetzt nichts am Tis
 
 Jeder Spieler legt seinen eigenen Charakter an. Alle 17 Klassen des Grundspiels sind enthalten, jede mit Aufstiegs- und Perk-Empfehlungen aus einem Guide. Freischaltbare Klassen stehen nur mit ihrem Symbol in der Auswahl.
 
+## Zwei Varianten
+
+| | Raspberry Pi | Handy-App (Android, Chrome) |
+| --- | --- | --- |
+| Wo läuft sie | als Docker-Container im Heimnetz | direkt auf dem Gerät, geladen von GitHub Pages |
+| Daten | auf dem Pi, für die ganze Gruppe | nur auf diesem Gerät |
+| Offline | nein | ja, nach dem ersten Öffnen |
+| Aktualisieren | Knopf „Jetzt aktualisieren“ in der App | automatisch beim Öffnen mit Internet |
+
+## Als App auf dem Handy installieren
+
+1. Einmalig im Repo: **Settings → Pages → Source: „GitHub Actions“** wählen. Danach baut jeder Push auf `main` die App neu (Reiter „Actions“, Ablauf „App für Handy bereitstellen“).
+2. Auf dem Handy in Chrome öffnen: `https://vaitage.github.io/Gloomhaven-Planer/`
+3. Im Chrome-Menü (drei Punkte) **„App installieren“** bzw. „Zum Startbildschirm hinzufügen“ antippen.
+
+Die App liegt dann wie jede andere auf dem Startbildschirm und läuft ohne Internet. Charaktere, Hände und Notizen bleiben auf dem Gerät. Wer die Browserdaten von Chrome für die Seite löscht, löscht sie mit. Ein Abgleich mit dem Pi findet nicht statt.
+
 ## Auf dem Raspberry Pi starten
 
 ```bash
@@ -63,6 +80,9 @@ npm start                       # http://localhost:8090
 | `server.mjs` | liefert die App aus und speichert den Stand als JSON |
 | `scripts/uebersetzungen/de.json` | eigene deutsche Texte, wo GHS nur englische hat |
 | `tools/pi/` | Update-Dienst für den Pi und sein Einrichtungsskript |
+| `scripts/build-statisch.mjs` | baut die Handy-Variante ohne Server |
+| `.github/workflows/pages.yml` | stellt die Handy-Variante über GitHub Pages bereit |
+| `public/sw.js` | macht die Handy-Variante offline nutzbar |
 | `test/` | Tests für Rechenlogik und Server |
 
 ## Grenzen
@@ -87,4 +107,4 @@ Die Empfehlungen sind in eigenen Worten zusammengefasst (`public/tipps.js`).
 
 ## Rechtliches
 
-Gloomhaven samt Texten und Bildern gehört Cephalofair Games. Dieses Repo enthält keine Spieldaten. Sie werden beim Build aus Gloomhaven Secretariat geholt (Daten dort u. a. aus dem Creator Pack, CC BY-NC-SA 4.0). Karten- und Gegenstandsbilder lädt die App direkt aus dem Projekt [Worldhaven](https://github.com/any2cards/worldhaven). Gedacht für den privaten, nicht kommerziellen Gebrauch.
+Gloomhaven samt Texten und Bildern gehört Cephalofair Games. Dieses Repo enthält keine Spieldaten. Sie werden beim Build aus Gloomhaven Secretariat geholt (Daten dort u. a. aus dem Creator Pack, CC BY-NC-SA 4.0). Karten- und Gegenstandsbilder lädt die App direkt aus dem Projekt [Worldhaven](https://github.com/any2cards/worldhaven). Die Handy-Variante auf GitHub Pages enthält die aufbereiteten Spieldaten, damit sie ohne Server läuft (wie bei Gloomhaven Secretariat selbst, unter derselben Lizenz und nicht kommerziell). Gedacht für den privaten, nicht kommerziellen Gebrauch.

@@ -38,7 +38,29 @@ function setStatus(text, bad = false) {
   statusEl.classList.toggle('fehler', bad);
 }
 
+// Zwei Betriebsarten: Mit Server (Raspberry Pi) liegt der Stand auf dem Server.
+// Die Geräte-Variante (GitHub Pages, als App installierbar) hat keinen Server und
+// merkt sich alles im Speicher des Geräts. scripts/build-statisch.mjs stellt sie ein.
+const OHNE_SERVER = document.querySelector('meta[name="planer-modus"]')?.content === 'statisch';
+const GERAET_KEY = 'gp.stand';
+
+function geraetStand() {
+  try { return JSON.parse(localStorage.getItem(GERAET_KEY)) || {}; } catch { return {}; }
+}
+
 async function request(path, options) {
+  if (OHNE_SERVER) {
+    if (path === 'api/data') {
+      const res = await fetch('gamedata.json');
+      if (!res.ok) throw new Error('Die Spieldaten konnten nicht geladen werden. Beim ersten Start braucht die App Internet.');
+      return res.json();
+    }
+    if (path === 'api/state') return geraetStand();
+    if (path === 'api/updates') throw new Error('gibt es nur mit Server');
+    // Speichern: den ganzen Stand auf dem Gerät ablegen
+    try { localStorage.setItem(GERAET_KEY, JSON.stringify(state)); } catch { throw new Error('Der Gerätespeicher ist voll oder gesperrt.'); }
+    return {};
+  }
   const res = await fetch(path, options);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Fehler ${res.status}`);
   return res.json();
@@ -51,16 +73,16 @@ function saveLater(key, path, getBody) {
   timers[key] = setTimeout(async () => {
     try {
       await request(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(getBody()) });
-      setStatus('Gespeichert');
+      setStatus(OHNE_SERVER ? 'Auf dem Gerät gespeichert' : 'Gespeichert');
     } catch (e) {
-      setStatus('Nicht gespeichert. Verbindung zum Server prüfen.', true);
+      setStatus(OHNE_SERVER ? 'Nicht gespeichert. Gerätespeicher prüfen.' : 'Nicht gespeichert. Verbindung zum Server prüfen.', true);
     }
   }, 500);
 }
-const saveShared = () => saveLater('shared', '/api/state/shared', () => state.shared);
+const saveShared = () => saveLater('shared', 'api/state/shared', () => state.shared);
 const saveProfile = () => {
   const name = local.profile;
-  if (name) saveLater('p:' + name, '/api/state/profiles/' + encodeURIComponent(name), () => state.profiles[name]);
+  if (name) saveLater('p:' + name, 'api/state/profiles/' + encodeURIComponent(name), () => state.profiles[name]);
 };
 
 // ---------- Abgeleitete Werte ----------
@@ -557,7 +579,7 @@ function renderNotes() {
       <label><span class="sr">Notiz</span>
         <textarea id="notiz" rows="8" placeholder="Was hat funktioniert, was nicht? Beim nächsten Versuch seht ihr es hier wieder.">${esc(notes[s.id] || '')}</textarea>
       </label>
-      <p class="hinweis">Notizen gelten für die ganze Gruppe und liegen auf eurem Server.</p>
+      <p class="hinweis">${OHNE_SERVER ? 'Notizen bleiben auf diesem Gerät.' : 'Notizen gelten für die ganze Gruppe und liegen auf eurem Server.'}</p>
     </section>
     <section>
       <h2>Wie lief es?</h2>
@@ -590,7 +612,7 @@ const ERGEBNIS = {
 };
 
 async function loadUpdates() {
-  try { updates = await request('/api/updates'); } catch { /* während des Neustarts oder nicht eingerichtet */ }
+  try { updates = await request('api/updates'); } catch { /* während des Neustarts oder nicht eingerichtet */ }
   return updates;
 }
 
@@ -640,7 +662,7 @@ function watchUpdates() {
 
 async function askUpdate(aktion) {
   try {
-    updates = await request('/api/updates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ aktion }) });
+    updates = await request('api/updates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ aktion }) });
     watchUpdates();
   } catch (e) {
     setStatus('Update-Anfrage fehlgeschlagen.', true);
@@ -781,7 +803,7 @@ view.addEventListener('input', (e) => {
 
 async function start() {
   try {
-    [data, state] = await Promise.all([request('/api/data'), request('/api/state')]);
+    [data, state] = await Promise.all([request('api/data'), request('api/state')]);
   } catch (e) {
     view.innerHTML = `<section class="leer-seite"><h1>Daten nicht geladen</h1><p>${esc(e.message)}</p><button type="button" class="haupt" onclick="location.reload()">Neu laden</button></section>`;
     return;
@@ -794,6 +816,9 @@ async function start() {
   if (!Object.keys(state.profiles).length) setupStart(heldCtx);
   render();
   if (!local.profile && Object.keys(state.profiles).length) openHeld();
+  // Geräte-Variante: offline nutzbar machen. Neue Versionen kommen beim nächsten Öffnen mit Internet.
+  if (OHNE_SERVER && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if (OHNE_SERVER) return;
   loadUpdates().then((u) => {
     if (!u) return;
     render();
