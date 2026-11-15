@@ -5,6 +5,7 @@ import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, extname, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { cleanState, cleanShared, cleanProfile, validName, MAX_PROFILE } from './public/stand.js';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -48,7 +49,7 @@ const MIME = {
 const defaultState = () => ({ shared: { players: 4, level: 1, notes: {} }, profiles: {} });
 let state = defaultState();
 if (existsSync(STATE_FILE)) {
-  try { state = { ...defaultState(), ...JSON.parse(readFileSync(STATE_FILE, 'utf8')) }; }
+  try { state = cleanState({ ...defaultState(), ...JSON.parse(readFileSync(STATE_FILE, 'utf8')) }); }
   catch (e) { console.error('state.json ist nicht lesbar, starte mit leerem Stand:', e.message); }
 }
 
@@ -63,8 +64,17 @@ function save() {
   return saving;
 }
 
+// Schutz im Browser: Inhalte nicht umdeuten, nicht in fremde Seiten einbetten, nur eigene Skripte
+const SCHUTZ = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://raw.githubusercontent.com; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+};
+
 const send = (res, code, body, type = 'application/json; charset=utf-8', extra = {}) => {
-  res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store', ...extra });
+  res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store', ...SCHUTZ, ...extra });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 };
 
@@ -81,11 +91,27 @@ function readBody(req) {
   });
 }
 
-const validName = (n) => typeof n === 'string' && /^[\p{L}\p{N} _.-]{1,30}$/u.test(n) && !['__proto__', 'constructor', 'prototype'].includes(n);
 const isObject = (v) => v && typeof v === 'object' && !Array.isArray(v);
+
+// Schreibende Anfragen nur von der App selbst: als JSON und nicht von einer fremden Webseite aus.
+// Ohne diese Prüfung könnte eine beliebige Seite, die jemand im Heimnetz öffnet, hier Daten ändern.
+function fremdeAnfrage(req) {
+  if (!/^application\/json\b/i.test(req.headers['content-type'] || '') && req.method !== 'DELETE') return 'Nur JSON';
+  const site = req.headers['sec-fetch-site'];
+  if (site && site !== 'same-origin' && site !== 'none') return 'Fremde Herkunft';
+  const origin = req.headers.origin;
+  if (origin) {
+    try { if (new URL(origin).host !== req.headers.host) return 'Fremde Herkunft'; } catch { return 'Fremde Herkunft'; }
+  }
+  return null;
+}
 
 async function api(req, res, path) {
   if (path === '/api/health') return send(res, 200, { ok: true });
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    const grund = fremdeAnfrage(req);
+    if (grund) return send(res, 403, { error: grund });
+  }
   if (path === '/api/data' && req.method === 'GET') {
     if (!existsSync(GAMEDATA)) return send(res, 503, { error: 'Spieldaten fehlen. Bitte "npm run import -- <pfad-zu-ghs>" ausführen.' });
     return send(res, 200, await readFile(GAMEDATA));
@@ -107,7 +133,7 @@ async function api(req, res, path) {
   if (path === '/api/state/shared' && req.method === 'PUT') {
     const body = await readBody(req);
     if (!isObject(body)) return send(res, 400, { error: 'Ungültige Daten' });
-    state.shared = { ...defaultState().shared, ...body };
+    state.shared = cleanShared({ ...defaultState().shared, ...body });
     await save();
     return send(res, 200, state.shared);
   }
@@ -118,9 +144,10 @@ async function api(req, res, path) {
     if (req.method === 'PUT') {
       const body = await readBody(req);
       if (!isObject(body)) return send(res, 400, { error: 'Ungültige Daten' });
-      state.profiles[name] = body;
+      if (!(name in state.profiles) && Object.keys(state.profiles).length >= MAX_PROFILE) return send(res, 400, { error: 'Zu viele Profile' });
+      state.profiles[name] = cleanProfile(body);
       await save();
-      return send(res, 200, body);
+      return send(res, 200, state.profiles[name]);
     }
     if (req.method === 'DELETE') {
       delete state.profiles[name];

@@ -1,4 +1,5 @@
 import { scenarioProfile, cardPool, scoreCard, suggestHand, handStats, stamina, autoPlan, itemPlan, scenarioReward, perksAllowed, estimateRounds, calibration, incomingDamage, xpProgress, applyEnhancements } from './logic.js';
+import { cleanState } from './stand.js';
 import { renderHeld, heldClick, heldInput, heldChange, heldDefaults, stickerName } from './held.js';
 import { renderSetup, setupStart, setupClick, setupInput, setupFarbe } from './setup.js';
 
@@ -837,7 +838,11 @@ document.querySelector('.reiter').addEventListener('click', (e) => {
   window.scrollTo(0, 0);
 });
 
+// Bilder, die nicht laden (kein Netz), ausblenden statt ein kaputtes Symbol zu zeigen
+view.addEventListener('error', (e) => { if (e.target instanceof HTMLImageElement && e.target.hasAttribute('data-bild')) e.target.hidden = true; }, true);
+
 view.addEventListener('click', (e) => {
+  if (e.target.closest('[data-act="neu-laden"]')) return location.reload();
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.go) { local.tab = b.dataset.go; render(); window.scrollTo(0, 0); return; }
@@ -1023,11 +1028,14 @@ async function start() {
   try {
     [data, state] = await Promise.all([request('api/data'), request('api/state')]);
   } catch (e) {
-    view.innerHTML = `<section class="leer-seite"><h1>Daten nicht geladen</h1><p>${esc(e.message)}</p><button type="button" class="haupt" onclick="location.reload()">Neu laden</button></section>`;
+    view.innerHTML = `<section class="leer-seite"><h1>Daten nicht geladen</h1><p>${esc(e.message)}</p><button type="button" class="haupt" data-act="neu-laden">Neu laden</button></section>`;
     return;
   }
-  state.shared ||= { players: 4, level: 1, notes: {} };
-  state.profiles ||= {};
+  // Gespeicherte Daten nie ungeprüft in die Seite übernehmen
+  state = cleanState(state);
+  // Profile ohne bekannte Klasse kann die App nicht anzeigen
+  for (const [name, p] of Object.entries(state.profiles)) if (!data.characters.some((c) => c.id === p.classId)) delete state.profiles[name];
+  if (local.profile && !state.profiles[local.profile]) local.profile = '';
   if (!state.profiles[local.profile]) local.profile = Object.keys(state.profiles).length === 1 ? Object.keys(state.profiles)[0] : '';
   if (!data.scenarios.some((s) => s.id === local.scenario)) local.scenario = data.scenarios[0].id;
   // Beim allerersten Start direkt ins Anlegen des Charakters, sonst zur Auswahl

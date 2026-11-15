@@ -267,7 +267,7 @@ function uebersichtHtml(ctx, p, c) {
 function gegenstandHtml(ctx, item, knoepfe, zusatz = '') {
   const { esc, data } = ctx;
   const bild = item.img && data.itemImageBase
-    ? `<img class="g-bild" src="${esc(data.itemImageBase + item.img)}" alt="" loading="lazy" width="72" height="101" onerror="this.hidden=true">` : '';
+    ? `<img class="g-bild" src="${esc(data.itemImageBase + item.img)}" alt="" loading="lazy" width="72" height="101" data-bild>` : '';
   return `
     <article class="gegenstand">
       ${bild}
