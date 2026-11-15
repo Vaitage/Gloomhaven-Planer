@@ -456,6 +456,15 @@ function aufstiegHtml(ctx, p, c) {
 
 // ---------- Verbesserungen ----------
 
+// Hängt in einem Guide-Text an jeden Kartennamen die Initiative an, z. B. „Skewer (35)“
+export function mitInitiative(text, cards) {
+  const namen = new Map();
+  for (const c of cards) for (const n of [c.name, c.nameEn]) if (n) namen.set(n, c.initiative);
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const muster = [...namen.keys()].sort((a, b) => b.length - a.length).map(esc).join('|');
+  return muster ? text.replace(new RegExp(`(${muster})(?! \\()`, 'g'), (n) => `${n} (${namen.get(n)})`) : text;
+}
+
 function verbessernHtml(ctx, p) {
   const { esc, state } = ctx;
   const list = (p.enh[p.classId] ||= []);
@@ -474,7 +483,7 @@ function verbessernHtml(ctx, p) {
   }).slice(0, 5);
   const topHtml = top.map((x) => `
     <li>
-      <p><b>${esc(stickerName(ctx, x.sticker, x.slot.on))}</b> ${seiteName(x.side)} auf ${esc(x.card.name)}</p>
+      <p><b>${esc(stickerName(ctx, x.sticker, x.slot.on))}</b> ${seiteName(x.side)} auf ${esc(x.card.name)} (${x.card.initiative})</p>
       <p class="g-meta">${x.cost} Gold, ${x.affordable ? 'kannst du dir leisten' : `dir fehlen ${x.cost - p.gold} Gold`}</p>
       <div class="knopfreihe">
         ${x.affordable ? `<button type="button" class="haupt" data-act="enh-kauf" data-card="${x.card.id}" data-side="${x.side}" data-slot="${x.index}" data-sticker="${x.sticker}">Kaufen</button>` : ''}
@@ -509,18 +518,19 @@ function verbessernHtml(ctx, p) {
     }
   }
   const guide = GUIDES[p.classId];
+  const alleKarten = ctx.data.characters.find((c) => c.id === p.classId).cards;
   return `
     <section>
       <h2>Was sich am meisten lohnt</h2>
       <p class="gold klein"><span class="muenze" aria-hidden="true"></span><b>${p.gold}</b> Gold</p>
       <ol class="vorschlaege">${topHtml || '<li>Keine freien Verbesserungsfelder in deinem Kartenvorrat.</li>'}</ol>
-      <p class="hinweis">Faustregel: Nutzen pro Einsatz mal Einsätze pro Szenario, geteilt durch die Kosten. Dauerhafte Effekte zählen vielfach, Verlustaktionen einmal.</p>
-      ${guide && guide.verbesserungen ? `<h3 class="zwischen">Laut Guides</h3><ul class="aenderungen">${guide.verbesserungen.map((t) => `<li>${esc(t)}</li>`).join('')}</ul><p class="hinweis">Quelle: ${esc(guide.verbesserungenQuelle || guide.quelle)}.</p>` : ''}
+      <p class="hinweis">Die Zahl in Klammern ist die Initiative der Karte, daran findest du sie im Stapel. Faustregel: Nutzen pro Einsatz mal Einsätze pro Szenario, geteilt durch die Kosten. Dauerhafte Effekte zählen vielfach, Verlustaktionen einmal.</p>
+      ${guide && guide.verbesserungen ? `<h3 class="zwischen">Laut Guides</h3><ul class="aenderungen">${guide.verbesserungen.map((t) => `<li>${esc(mitInitiative(t, alleKarten))}</li>`).join('')}</ul><p class="hinweis">Quelle: ${esc(guide.verbesserungenQuelle || guide.quelle)}.</p>` : ''}
     </section>
     <section>
       <h2>Kosten für eine Karte nachsehen</h2>
       <label class="sr" for="enhKarte">Karte</label>
-      <select id="enhKarte" class="auswahl">${mitFeld.map((c) => `<option value="${c.id}" ${wahl && c.id === wahl.id ? 'selected' : ''}>${esc(c.name)} (Stufe ${c.level})</option>`).join('')}</select>
+      <select id="enhKarte" class="auswahl">${mitFeld.map((c) => `<option value="${c.id}" ${wahl && c.id === wahl.id ? 'selected' : ''}>${esc(c.name)} (${c.initiative}), Stufe ${c.level}</option>`).join('')}</select>
       <ul class="felder">${felder || '<li>Diese Karte hat keine Verbesserungsfelder.</li>'}</ul>
       <p class="hinweis">Kosten nach Regelheft: Grundpreis, doppelt bei mehreren Zielen, plus 25 Gold je Kartenstufe über 1, plus 75 Gold je Verbesserung, die schon auf derselben Aktion klebt. Felder von Beschwörungen fehlen noch.</p>
       <p class="hinweis">Verbesserte Karten: ${verbesserteKarten}. Erlaubt sind so viele verbesserte Karten wie eure Wohlstandsstufe (${prosp}).</p>
