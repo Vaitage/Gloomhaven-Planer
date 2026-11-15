@@ -578,6 +578,7 @@ export function calibration(results) {
 // opts.restLosses: Karten-IDs, die bei den bisherigen Rasten tatsächlich verloren gingen (der Reihe nach)
 // opts.events: Eingaben vom Tisch, je { after: Runde, type: 'lose' | 'rest' | 'elements', card, elements }.
 //   Die Runden bis dahin bleiben, wie sie ohne die Eingabe wären, alles danach wird neu geplant.
+//   type 'basic' mit side 'top' | 'bottom': in Runde "after" wurde von der Karte nur die Standardaktion gespielt.
 // opts.eventBudgets: je Eingabe, wie viele Verlustaktionen danach noch eingeplant werden dürfen
 // opts.staminaItems: getragene Ausdauertränke ({ id, name, n }), jeder holt einmal n abgeworfene Karten zurück
 export function gamePlan(cards, profile, opts = {}) {
@@ -611,12 +612,12 @@ export function gamePlan(cards, profile, opts = {}) {
   // Eingaben vom Tisch: nach Runde "after" ging eine Karte verloren, wurde gerastet oder liegt ein Element aus.
   const events = (opts.events || []).map((e, index) => ({ ...e, index })).sort((a, b) => a.after - b.after || a.index - b.index);
   const eventBudgets = opts.eventBudgets || [];
-  const due = () => events.some((e) => !e.done && e.after === round);
+  const due = () => events.some((e) => !e.done && e.type !== 'basic' && e.after === round);
   // Wendet alle Eingaben an, die nach der aktuellen Runde fällig sind. Liefert true, wenn gerastet werden soll.
   const applyEvents = () => {
     let rest = false;
     for (const e of events) {
-      if (e.done || e.after !== round) continue;
+      if (e.done || e.type === 'basic' || e.after !== round) continue;
       e.done = true;
       const reserve = target > 0 && round >= target;
       if (e.type === 'lose') {
@@ -660,6 +661,24 @@ export function gamePlan(cards, profile, opts = {}) {
       for (let k = 0; k < ordered.rounds.length; k++) {
         const p = ordered.rounds[k];
         round++;
+        // Eingabe: in dieser Runde wurde von einer Karte nur die Standardaktion gespielt.
+        // Eine geplante Verlustaktion ist damit nicht verbraucht, die Karte bleibt im Spiel.
+        const basicBy = {};
+        for (const e of events) {
+          if (e.done || e.type !== 'basic' || e.after !== round) continue;
+          e.done = true;
+          const x = p[e.side];
+          if (x && !x.basic) {
+            p[e.side] = { card: x.card, side: x.side, half: BASIC[x.side], value: x.side === 'top' ? basicAttack : 1.1, dmg: x.side === 'top' ? basicAttack : 0, basic: true };
+            p.gen = [...(p.top.half.gen || []), ...(p.bottom.half.gen || [])];
+            const use = [...(p.top.half.use || []), ...(p.bottom.half.use || [])];
+            p.fed = (p.fed || []).filter((el) => use.includes(el));
+            p.hungry = (p.hungry || []).filter((el) => use.includes(el));
+            basicBy[e.side] = e.index;
+          }
+          if (eventBudgets[e.index] != null) budget = Math.min(budget, eventBudgets[e.index]);
+        }
+        const replan = Object.keys(basicBy).length > 0;
         const inis = [p.top.card.initiative, p.bottom.card.initiative].sort((a, b) => a - b);
         const halves = [p.top.half, p.bottom.half];
         const protect = halves.some((h) => (h.conditions || []).some((c) => ['stun', 'disarm', 'immobilize'].includes(c)) || h.heal || h.shield);
@@ -683,10 +702,10 @@ export function gamePlan(cards, profile, opts = {}) {
           notes: p.notes, fed: p.fed || [], hungry: p.hungry || [],
           lost: lostNow.map((x) => x.card.id), finale, reserve: target > 0 && round > target,
           // was nach dieser Runde noch da ist: für Eingaben wie "Karte verloren" oder "hier rasten"
-          pool: [...pairing.left, ...later, ...discard], canRest: discard.length >= 2,
+          pool: [...pairing.left, ...later, ...discard], canRest: discard.length >= 2, basicBy,
         });
         // Eine Eingabe nach dieser Runde: der Rest des Zyklus wird mit dem neuen Stand neu geplant
-        if (due() && k < ordered.rounds.length - 1) {
+        if ((due() || replan) && k < ordered.rounds.length - 1) {
           hand = [...pairing.left, ...later];
           carried = [...p.gen];
           cut = true;

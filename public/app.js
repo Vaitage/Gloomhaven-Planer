@@ -527,6 +527,7 @@ function stepHtml(s, einsatz = []) {
       ${odds ? `<p class="quote">Damit bist du dran vor: ${odds}.</p>` : ''}
       ${notes.length ? `<ul class="gruende">${notes.map((n) => `<li class="neutral">${esc(n)}</li>`).join('')}</ul>` : ''}
       ${einsatz.map((x) => `<p class="einsatz"><span class="marke gut">Gegenstand</span> <b>${esc(x.item.name)}</b>: ${esc(x.why)}</p>`).join('')}
+      ${Object.entries(s.basicBy || {}).map(([side, i]) => `<p class="einsatz"><span class="marke gut">Eingetragen</span> Von <b>${esc(s[side].card.name)}</b> nur die Standardaktion gespielt, die Karte bleibt im Spiel. <button type="button" class="text-knopf" data-act="tisch-weg" data-i="${i}">Eingabe entfernen</button></p>`).join('')}
       <button type="button" class="text-knopf" data-act="tisch-offen" data-n="${s.n}" aria-expanded="${local.planOffen === s.n}">${local.planOffen === s.n ? 'Schließen' : 'Nach dieser Runde ist etwas passiert'}</button>
       ${local.planOffen === s.n ? tischHtml(s) : ''}
     </li>`;
@@ -538,7 +539,12 @@ function tischHtml(s) {
   const karten = [...s.pool].sort((a, b) => a.name.localeCompare(b.name, 'de'))
     .map((c) => `<option value="${c.id}">${esc(c.name)} (${c.initiative})</option>`).join('');
   const liegt = new Set((local.planEvents || []).filter((e) => e.type === 'elements' && e.after === s.n).flatMap((e) => e.elements));
+  const verlust = [['top', s.top], ['bottom', s.bottom]].filter(([, x]) => !x.basic && x.card[x.side].lost);
+  const basis = verlust.length ? `<span class="feldname">In dieser Runde: Verlustaktion nicht genutzt</span>
+      <div class="knopfreihe">${verlust.map(([side, x]) => `<button type="button" class="leise" data-act="tisch-basis" data-n="${s.n}" data-side="${side}">${esc(x.card.name)} nur als ${side === 'top' ? 'Angriff 2' : 'Bewegung 2'} gespielt</button>`).join('')}</div>` : '';
   return `<div class="tisch">
+      ${basis}
+      ${verlust.length ? '<span class="feldname">Nach dieser Runde</span>' : ''}
       <label class="rast-wahl" for="tisch-karte">Karte verloren, zum Beispiel um Schaden abzuwehren
         <select id="tisch-karte" class="auswahl">${karten}</select></label>
       <div class="knopfreihe">
@@ -885,6 +891,15 @@ view.addEventListener('click', (e) => {
   if (act === 'ziel-reset') { delete local.targets[local.scenario]; return render(); }
   if (act === 'rast-zurueck') { local.rastVerlust = []; local.planEvents = []; local.planOffen = null; return render(); }
   if (act === 'tisch-offen') { const n = Number(b.dataset.n); local.planOffen = local.planOffen === n ? null : n; return renderKeep(`[data-runde="${n}"]`); }
+  if (act === 'tisch-basis') {
+    const n = Number(b.dataset.n);
+    // gilt für die Runde selbst: Eingaben nach dieser Runde verfallen, die davor bleiben
+    planSchnitt(n);
+    local.planEvents = local.planEvents.filter((e) => e.after < n || (e.type === 'basic' && e.side !== b.dataset.side));
+    local.planEvents.push({ after: n, type: 'basic', side: b.dataset.side });
+    local.planOffen = null;
+    return renderKeep(`[data-runde="${n}"]`);
+  }
   if (act === 'tisch-karte' || act === 'tisch-rast' || act === 'tisch-element') {
     const n = Number(b.dataset.n);
     if (act === 'tisch-element') {

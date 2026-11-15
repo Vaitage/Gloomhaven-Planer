@@ -576,3 +576,27 @@ test('Mehrere Eingaben: frühere Planteile bleiben stehen, wenn eine spätere da
   regelkonform(zwei, cards);
   assert.equal(autoPlan(cards, profile, { target: 12 }).before, null);
 });
+
+test('Eingabe „nur Standardaktion gespielt“: Verlustkarte bleibt im Spiel', { skip: !withData }, () => {
+  const { profile, cards } = tischHand();
+  const basis = gamePlan(cards, profile, { losses: 2, target: 12 });
+  const mitVerlust = basis.steps.find((s) => s.type === 'round' && s.lost.length && !s.finale);
+  assert.ok(mitVerlust, 'der Plan enthält eine Verlustaktion');
+  const side = [mitVerlust.top, mitVerlust.bottom].find((x) => !x.basic && x.card[x.side].lost).side;
+  const karte = mitVerlust[side].card;
+  const n = mitVerlust.n;
+  const plan = gamePlan(cards, profile, { losses: 2, target: 12, events: [{ after: n, type: 'basic', side }] });
+  assert.deepEqual(folge(plan.steps).slice(0, n - 1), folge(basis.steps).slice(0, n - 1));
+  const runde = plan.steps.find((s) => s.type === 'round' && s.n === n);
+  assert.equal(runde[side].card.id, karte.id);
+  assert.equal(runde[side].basic, true);
+  assert.deepEqual(runde.basicBy, { [side]: 0 });
+  assert.ok(!runde.lost.includes(karte.id));
+  // die Karte ist nicht verloren: sie liegt im Ablagestapel und kommt nach der Rast wieder
+  assert.ok(runde.pool.some((c) => c.id === karte.id));
+  assert.ok(plan.steps.slice(plan.steps.indexOf(runde) + 1).some((s) => s.type === 'round' && (s.top.card.id === karte.id || s.bottom.card.id === karte.id)));
+  regelkonform(plan, cards);
+  assert.ok(plan.totalRounds >= basis.totalRounds);
+  // auf einer Runde ohne passende Karte bewirkt die Eingabe nichts
+  assert.deepEqual(folge(gamePlan(cards, profile, { losses: 2, target: 12, events: [{ after: 99, type: 'basic', side: 'top' }] }).steps), folge(basis.steps));
+});
