@@ -615,3 +615,27 @@ test('Eingabe „nur Standardaktion gespielt“: Verlustkarte bleibt im Spiel', 
   // auf einer Runde ohne passende Karte bewirkt die Eingabe nichts
   assert.deepEqual(folge(gamePlan(cards, profile, { losses: 2, target: 12, events: [{ after: 99, type: 'basic', side: 'top' }] }).steps), folge(basis.steps));
 });
+
+test('Kurze und lange Rast lassen sich je Rast wählen', { skip: !withData }, () => {
+  const { profile, cards } = tischHand();
+  const kurz0 = gamePlan(cards, profile, { losses: 0 });
+  const plan = gamePlan(cards, profile, { losses: 0, restKinds: [null, 'long'] });
+  const rasten = plan.steps.filter((s) => s.type === 'rest');
+  assert.equal(rasten[0].long, false);
+  assert.equal(rasten[1].long, true);
+  assert.equal(rasten[2].long, false);
+  // die lange Rast kostet eine Runde am Tisch, gespielt wird gleich oft
+  assert.equal(plan.rounds, kurz0.rounds);
+  assert.equal(plan.totalRounds, kurz0.totalRounds + 1);
+  assert.equal(rasten[1].n, plan.steps[plan.steps.indexOf(rasten[1]) - 1].n + 1);
+  // Grundeinstellung lang, eine Rast davon kurz
+  const lang = gamePlan(cards, profile, { losses: 0, longRest: true, restKinds: ['short'] });
+  assert.deepEqual(lang.steps.filter((s) => s.type === 'rest').slice(0, 2).map((s) => s.long), [false, true]);
+  // vorgezogene lange Rast
+  const frueh = gamePlan(cards, profile, { losses: 0, events: [{ after: 2, type: 'rest', long: true }] });
+  assert.equal(frueh.steps[2].type, 'rest');
+  assert.equal(frueh.steps[2].long, true);
+  assert.equal(frueh.steps[2].n, 3);
+  assert.equal(frueh.steps[3].n, 4);
+  regelkonform(frueh, cards);
+});

@@ -575,6 +575,7 @@ export function calibration(results) {
 // opts.target: geschätzte Szenariolänge. Ist sie bekannt, kommen Verlustaktionen früh.
 // opts.longRest: lange Rasten (Karte frei wählbar, kostet eine Runde)
 // opts.tank: du willst die Angriffe auf dich ziehen
+// opts.restKinds: je Rast 'short' oder 'long', wenn sie von opts.longRest abweicht (der Reihe nach)
 // opts.restLosses: Karten-IDs, die bei den bisherigen Rasten tatsächlich verloren gingen (der Reihe nach)
 // opts.events: Eingaben vom Tisch, je { after: Runde, type: 'lose' | 'rest' | 'elements', card, elements }.
 //   Die Runden bis dahin bleiben, wie sie ohne die Eingabe wären, alles danach wird neu geplant.
@@ -608,6 +609,7 @@ export function gamePlan(cards, profile, opts = {}) {
   const lostPlayed = [];
   const potions = [...(opts.staminaItems || [])];
   const restLosses = opts.restLosses || [];
+  const restKinds = opts.restKinds || [];
   let restIndex = 0;
 
   // Eingaben vom Tisch: nach Runde "after" ging eine Karte verloren, wurde gerastet oder liegt ein Element aus.
@@ -739,8 +741,10 @@ export function gamePlan(cards, profile, opts = {}) {
     discard = discard.filter((c) => c !== lose);
     hand = [...hand, ...discard];
     discard = [];
-    if (longRest) round++;
-    steps.push({ type: 'rest', index: restIndex, long: longRest, n: longRest ? round : null, lose, suggest: worst, chosen: !!actual, options, handAfter: hand.length, reserve: target > 0 && round > target, early: forced ? forced.index : null });
+    // kurz oder lang: Eingabe an dieser Rast, sonst die vorgezogene Rast, sonst die Grundeinstellung
+    const isLong = restKinds[restIndex] != null ? restKinds[restIndex] === 'long' : forced && forced.long != null ? !!forced.long : longRest;
+    if (isLong) round++;
+    steps.push({ type: 'rest', index: restIndex, long: isLong, n: isLong ? round : null, lose, suggest: worst, chosen: !!actual, options, handAfter: hand.length, reserve: target > 0 && round > target, early: forced ? forced.index : null });
     restIndex++;
     cycle++;
     carried = [];

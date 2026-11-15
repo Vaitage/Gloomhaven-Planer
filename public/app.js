@@ -22,6 +22,7 @@ const local = {
   poolFilter: 'vorrat',
   losses: 2,
   planEvents: [],
+  rastArt: [],
   planOffen: null,
   longRest: false,
   heldTab: 'uebersicht',
@@ -508,7 +509,11 @@ function stepHtml(s, einsatz = []) {
         : `Kurze Rast: die verlorene Karte ist Zufall. Am wenigsten weh tut <b>${esc(s.lose.name)}</b>. Trifft es eine wichtige Karte, lohnt sich oft 1 Schaden für einen neuen Zufall.`;
     const wahl = [...s.options].sort((a, b) => a.name.localeCompare(b.name, 'de'))
       .map((c) => `<option value="${c.id}" ${c.id === s.lose.id ? 'selected' : ''}>${esc(c.name)} (${c.initiative})${c.id === s.suggest.id ? ', Vorschlag' : ''}</option>`).join('');
-    return `<li class="rast ${s.reserve ? 'reserve' : ''} ${s.chosen || s.early != null ? 'gewaehlt' : ''}">${frueh}<p>${what}</p>
+    const art = `<div class="seg rast-art" role="group" aria-label="Art der Rast">
+        <button type="button" data-act="rast-art" data-i="${s.index}" data-val="short" aria-pressed="${!s.long}">Kurze Rast</button>
+        <button type="button" data-act="rast-art" data-i="${s.index}" data-val="long" aria-pressed="${s.long}">Lange Rast</button>
+      </div>`;
+    return `<li class="rast ${s.reserve ? 'reserve' : ''} ${s.chosen || s.early != null ? 'gewaehlt' : ''}">${frueh}${art}<p>${what}</p>
       <label class="rast-wahl" for="rast-${s.index}">${s.long ? 'Andere Karte abgegeben?' : 'Welche Karte hat es getroffen?'}
         <select id="rast-${s.index}" class="auswahl" data-rast="${s.index}">${wahl}</select></label>
       <p class="hinweis">Danach ${s.handAfter} Karten auf der Hand.${s.chosen ? '' : ' Wählst du eine andere Karte, wird der Plan ab hier neu gerechnet.'}</p></li>`;
@@ -549,7 +554,8 @@ function tischHtml(s) {
         <select id="tisch-karte" class="auswahl">${karten}</select></label>
       <div class="knopfreihe">
         <button type="button" class="leise" data-act="tisch-karte" data-n="${s.n}" ${karten ? '' : 'disabled'}>Karte als verloren eintragen</button>
-        <button type="button" class="leise" data-act="tisch-rast" data-n="${s.n}" ${s.canRest ? '' : 'disabled'}>Jetzt schon rasten</button>
+        <button type="button" class="leise" data-act="tisch-rast" data-n="${s.n}" data-val="short" ${s.canRest ? '' : 'disabled'}>Jetzt kurz rasten</button>
+        <button type="button" class="leise" data-act="tisch-rast" data-n="${s.n}" data-val="long" ${s.canRest ? '' : 'disabled'}>Jetzt lang rasten</button>
       </div>
       <span class="feldname">Element liegt aus, zum Beispiel durch eine Angriffskarte</span>
       <div class="elemente">${ELEMENTE.map((e) => `<button type="button" class="leise" data-act="tisch-element" data-n="${s.n}" data-el="${e}" aria-pressed="${liegt.has(e)}">${esc(elemName(e))}</button>`).join('')}</div>
@@ -564,6 +570,7 @@ function planSchnitt(n) {
   const at = steps.findIndex((s) => s.type === 'round' && s.n === n);
   const rasten = steps.slice(0, at + 1).filter((s) => s.type === 'rest').length;
   local.rastVerlust = (local.rastVerlust || []).slice(0, rasten);
+  local.rastArt = local.rastArt.slice(0, rasten);
 }
 
 // Neu zeichnen, ohne dass die Stelle unter dem Finger wegspringt
@@ -596,10 +603,10 @@ function renderPlan() {
   const traenke = getragen.filter((i) => i.tags && i.tags.stamina && i.use === 'consumed').map((i) => ({ id: i.id, name: i.name, n: i.tags.stamina }));
   // Tatsächlich verlorene Karten gelten nur für genau diese Hand in diesem Szenario
   const rastKey = `${local.profile}|${local.scenario}|${local.longRest}|${cards.map((c) => c.id).sort().join(',')}`;
-  if (local.rastKey !== rastKey) { local.rastKey = rastKey; local.rastVerlust = []; local.planEvents = []; local.planOffen = null; }
-  const plan = autoPlan(cards, p, { target, longRest: local.longRest, tank: !!profile().tank, conditionName: condName, staminaItems: traenke, restLosses: local.rastVerlust, events: local.planEvents });
+  if (local.rastKey !== rastKey) { local.rastKey = rastKey; local.rastVerlust = []; local.rastArt = []; local.planEvents = []; local.planOffen = null; }
+  const plan = autoPlan(cards, p, { target, longRest: local.longRest, tank: !!profile().tank, conditionName: condName, staminaItems: traenke, restLosses: local.rastVerlust, restKinds: local.rastArt, events: local.planEvents });
   local.planLetzter = plan;
-  const rastGewaehlt = plan.steps.some((s) => s.type === 'rest' && s.chosen) || local.planEvents.length > 0;
+  const rastGewaehlt = plan.steps.some((s) => s.type === 'rest' && s.chosen) || local.planEvents.length > 0 || local.rastArt.some((x) => x != null);
   const gespart = plan.beforeLosses != null ? plan.beforeLosses - plan.lossesPlanned : 0;
   const kosten = plan.before == null ? '' : ` Deine Hand hält damit ${plan.before === plan.totalRounds ? `weiter ${plan.totalRounds}` : `${plan.totalRounds} statt ${plan.before}`} Runden${gespart > 0 ? `, weil der Plan dafür ${gespart === 1 ? 'eine Verlustaktion' : `${gespart} Verlustaktionen`} weniger einplant` : ''}.`;
   const einsatz = itemPlan(plan, getragen, p, { elementName: elemName, longRest: local.longRest });
@@ -889,7 +896,19 @@ view.addEventListener('click', (e) => {
   }
   if (act === 'leeren') { profile().hands[handKey()] = []; saveProfile(); return render(); }
   if (act === 'ziel-reset') { delete local.targets[local.scenario]; return render(); }
-  if (act === 'rast-zurueck') { local.rastVerlust = []; local.planEvents = []; local.planOffen = null; return render(); }
+  if (act === 'rast-zurueck') { local.rastVerlust = []; local.rastArt = []; local.planEvents = []; local.planOffen = null; return render(); }
+  if (act === 'rast-art') {
+    // Art dieser Rast ändern. Was danach eingetragen war, hängt davon ab und verfällt.
+    const i = Number(b.dataset.i);
+    const steps = local.planLetzter ? local.planLetzter.steps : [];
+    const at = steps.findIndex((s) => s.type === 'rest' && s.index === i);
+    const davor = steps.slice(0, Math.max(0, at)).filter((s) => s.type === 'round').length;
+    local.planEvents = local.planEvents.filter((x) => x.after <= davor);
+    local.rastVerlust = (local.rastVerlust || []).slice(0, i + 1);
+    local.rastArt = local.rastArt.slice(0, i);
+    local.rastArt[i] = b.dataset.val;
+    return renderKeep(`#rast-${i}`);
+  }
   if (act === 'tisch-offen') { const n = Number(b.dataset.n); local.planOffen = local.planOffen === n ? null : n; return renderKeep(`[data-runde="${n}"]`); }
   if (act === 'tisch-basis') {
     const n = Number(b.dataset.n);
@@ -914,7 +933,7 @@ view.addEventListener('click', (e) => {
     } else {
       planSchnitt(n);
       if (act === 'tisch-karte') local.planEvents.push({ after: n, type: 'lose', card: Number($('#tisch-karte').value) });
-      else local.planEvents.push({ after: n, type: 'rest' });
+      else local.planEvents.push({ after: n, type: 'rest', long: b.dataset.val === 'long' });
       local.planOffen = null;
     }
     return renderKeep(`[data-runde="${n}"]`);
@@ -983,6 +1002,7 @@ view.addEventListener('change', (e) => {
     local.planEvents = local.planEvents.filter((x) => x.after <= davor);
     local.rastVerlust = (local.rastVerlust || []).slice(0, i);
     local.rastVerlust[i] = wert;
+    local.rastArt = local.rastArt.slice(0, i + 1);
     renderKeep(`#rast-${i}`);
   }
 });

@@ -503,3 +503,7 @@ main { overflow-wrap: anywhere; }
 .elemente button { min-height: 44px; padding: 6px 4px; }
 .elemente button[aria-pressed="true"] { background: var(--klasse); border-color: var(--klasse); color: var(--tinte); font-weight: 600; }
 @media (min-width: 640px) { .elemente { grid-template-columns: repeat(6, 1fr); } }
+
+/* Rast: kurz oder lang */
+.rast-art { margin: 0 0 8px; max-width: 320px; }
+.rast-art button { min-height: 44px; }
