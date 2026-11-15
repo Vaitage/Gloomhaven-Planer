@@ -324,3 +324,13 @@ test('Guides passen zu den Daten aller Klassen', { skip: !withData }, () => {
     for (const key of g.perks) { const i = c.perks.findIndex((p) => p.key === key); assert.equal(taken[i], c.perks[i].count, `${c.id}: ${key} bleibt offen`); }
   }
 });
+
+test('Jede Klasse hat ein Symbol, das nur aus Formen besteht', { skip: !withData }, () => {
+  for (const c of data.characters) {
+    assert.ok(c.icon && /^[\d. -]+$/.test(c.icon.box), `Symbol fehlt: ${c.id}`);
+    const tags = [...c.icon.body.matchAll(/<\/?([a-zA-Z:]+)/g)].map((m) => m[1]);
+    assert.ok(tags.includes('path'), `Symbol ohne Form: ${c.id}`);
+    assert.ok(tags.every((t) => ['g', 'path', 'circle', 'ellipse', 'rect', 'polygon', 'polyline'].includes(t)), `Unerwartetes Element im Symbol: ${c.id}`);
+    assert.ok(!/\son\w+=|href|style=/.test(c.icon.body), `Unerwartetes Attribut im Symbol: ${c.id}`);
+  }
+});

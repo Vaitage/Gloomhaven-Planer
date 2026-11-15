@@ -131,8 +131,8 @@ function hexToHsl(hex) {
 const THEMA = ['--klasse', '--messing', '--tinte', '--schiefer', '--schiefer-hell', '--tiefe', '--pergament-leise'];
 let themaFarbe = null;
 
-// Färbt die ganze App nach der Klasse: Hintergrund und Flächen bekommen den Farbton
-// der Klasse in dunkel, Knöpfe und Akzente die Klassenfarbe selbst (bei dunklen
+// Färbt die App nach der Klasse: Hintergrund und Flächen bekommen nur einen Hauch
+// des Farbtons, Rahmen etwas mehr, Knöpfe und Akzente die Klassenfarbe selbst (bei dunklen
 // Klassenfarben aufgehellt, damit dunkle Schrift darauf lesbar bleibt).
 function applyTheme(hex) {
   if (hex === themaFarbe) return;
@@ -149,15 +149,20 @@ function applyTheme(hex) {
   const akzent = `hsl(${c.h}, ${Math.round(c.s)}%, ${Math.round(Math.max(c.l, 64))}%)`;
   root.setProperty('--klasse', akzent);
   root.setProperty('--messing', akzent);
-  root.setProperty('--tinte', farbe(34, 10));
-  root.setProperty('--schiefer', farbe(28, 16));
+  root.setProperty('--tinte', farbe(10, 10));
+  root.setProperty('--schiefer', farbe(11, 16));
   root.setProperty('--schiefer-hell', farbe(24, 27));
-  root.setProperty('--tiefe', farbe(38, 6));
+  root.setProperty('--tiefe', farbe(10, 6));
   root.setProperty('--pergament-leise', farbe(16, 70));
-  if (meta) meta.content = farbe(34, 10);
+  if (meta) meta.content = farbe(10, 10);
 }
 
 // ---------- Kopf ----------
+
+// Klassensymbol als SVG in der Klassenfarbe, ohne Symbol die schlichte Raute
+function classIconHtml(c) {
+  return c && c.icon ? `<svg viewBox="${esc(c.icon.box)}" fill="currentColor" aria-hidden="true" focusable="false">${c.icon.body}</svg>` : '<span class="held-farbe"></span>';
+}
 
 function renderHeader() {
   const p = profile();
@@ -166,6 +171,9 @@ function renderHeader() {
   applyTheme(imSetup ? setupFarbe(heldCtx) : c ? c.color : null);
   $('#heldName').textContent = c ? c.name : imSetup ? 'Neuer Charakter' : Object.keys(state.profiles).length ? 'Held wählen' : 'Held anlegen';
   if (p) heldDefaults(p);
+  const zeichen = $('#heldZeichen');
+  const iconId = c ? c.id : imSetup ? local.setup.classId : '';
+  if (zeichen.dataset.klasse !== iconId) { zeichen.dataset.klasse = iconId; zeichen.innerHTML = classIconHtml(data.characters.find((x) => x.id === iconId)); }
   $('#heldSub').textContent = p && c ? `Stufe ${p.level}, ${p.gold} Gold` : imSetup ? 'Einrichtung' : 'Tippen zum Einrichten';
   $('#heldBtn').classList.toggle('aktiv', local.tab === 'held');
   const mini = $('#miniEp');
@@ -695,7 +703,7 @@ function render() {
 const heldCtx = {
   get data() { return data; },
   get state() { return state; },
-  local, view, esc, seg, halfHtml, condName, elemName, setStatus,
+  local, view, esc, seg, classIconHtml, halfHtml, condName, elemName, setStatus,
   profile, character, owned, pool, currentProfile, saveProfile, saveShared, render, classLabel, selectProfile,
 };
 

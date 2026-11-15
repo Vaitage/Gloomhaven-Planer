@@ -8,7 +8,7 @@ ARG GHS_REF=97b2f965e613bd3ad7e45bd9f57f478eb37058c0
 WORKDIR /build
 RUN git init -q ghs && cd ghs \
  && git remote add origin https://github.com/Lurkars/gloomhavensecretariat.git \
- && git sparse-checkout set data/gh src/assets/locales \
+ && git sparse-checkout set data/gh src/assets/locales src/assets/images/character/icons \
  && git fetch -q --depth 1 --filter=blob:none origin "$GHS_REF" \
  && git checkout -q FETCH_HEAD
 COPY scripts ./scripts

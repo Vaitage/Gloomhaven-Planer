@@ -369,6 +369,28 @@ function perkOf(p) {
   return { key, text: parts.join(' und '), count: p.count || 1, remove: expand(removed), add: expand(added), item, scenario };
 }
 
+// Klassensymbol aus GHS als schlankes SVG: nur Formen und ihre Geometrie, Farbe kommt aus der App.
+const ICON_TAGS = new Set(['g', 'path', 'circle', 'ellipse', 'rect', 'polygon', 'polyline']);
+const ICON_ATTRS = new Set(['d', 'transform', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'width', 'height', 'points', 'fill-rule', 'clip-rule']);
+function classIcon(id) {
+  const file = join(ghsDir, 'src', 'assets', 'images', 'character', 'icons', `gh-${id}.svg`);
+  if (!existsSync(file)) return null;
+  const svg = readFileSync(file, 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+  const box = /viewBox="([\d.\s-]+)"/.exec(svg);
+  if (!box) return null;
+  let body = '';
+  for (const m of svg.matchAll(/<(\/?)([a-zA-Z:]+)((?:\s+[^\s=>\/]+\s*=\s*"[^"]*")*)\s*(\/?)>/g)) {
+    const [, zu, tag, attrs, leer] = m;
+    if (!ICON_TAGS.has(tag)) continue;
+    if (zu) { body += `</${tag}>`; continue; }
+    const keep = [...attrs.matchAll(/\s+([^\s=]+)\s*=\s*"([^"]*)"/g)]
+      .filter(([, name]) => ICON_ATTRS.has(name))
+      .map(([, name, value]) => ` ${name}="${value.replace(/\s+/g, ' ').replace(/[<>&]/g, '')}"`).join('');
+    body += `<${tag}${keep}${leer ? '/' : ''}>`;
+  }
+  return body.includes('<path') || body.includes('<circle') || body.includes('<polygon') ? { box: box[1].trim().replace(/\s+/g, ' '), body } : null;
+}
+
 const characters = [];
 for (const file of readDir(join(GH, 'character'))) {
   const c = readJson(join(GH, 'character', file));
@@ -383,6 +405,7 @@ for (const file of readDir(join(GH, 'character'))) {
     locked: !!c.spoiler,
     handSize: c.handSize,
     color: c.color,
+    icon: classIcon(c.name),
     health: (c.stats || []).sort((a, b) => a.level - b.level).map((s) => s.health),
     perks: (c.perks || []).map(perkOf),
     cards: deck.abilities.map((a) => ({

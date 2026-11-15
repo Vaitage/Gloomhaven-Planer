@@ -39,7 +39,7 @@ Guide-Empfehlungen stehen in `public/tipps.js` für alle 17 Klassen (Kartennamen
 Der Import schreibt je Klasse `perks` mit Schlüssel (`rm:2x-1`, `re:1x-1>1x+1`, `add:2x+1R`, `item+add:2x+1`, `scen` …), deutschem Text und den Karten, die entfernt oder hinzugefügt werden. `buildDeck()`, `deckStats()` und `perkAdvice()` in `logic.js` rechnen damit. `guidePerk()` liefert den nächsten Perk nach der Guide-Reihenfolge aus `tipps.js`. Am Profil stehen `perks` (Zähler je Klasse) und `checks` (Kampfziel-Haken).
 
 ## Erst-Setup und Farbschema
-`public/setup.js` führt durch das Anlegen oder Bearbeiten eines Charakters. Der Entwurf liegt in `local.setup` und wird erst am Ende ins Profil geschrieben. `applyTheme()` in `app.js` leitet aus der Klassenfarbe alle Farb-Variablen ab. Gold behält über `--gold` seine eigene Farbe.
+`public/setup.js` führt durch das Anlegen oder Bearbeiten eines Charakters. Der Entwurf liegt in `local.setup` und wird erst am Ende ins Profil geschrieben. `applyTheme()` in `app.js` leitet aus der Klassenfarbe alle Farb-Variablen ab (Hintergrund und Flächen nur mit einem Hauch Farbton, Rahmen und Akzente deutlich). Das Klassensymbol im Kopf kommt aus den GHS-Symbolen: `classIcon()` im Import legt es als bereinigtes SVG in `gamedata.json` (`icon`), deshalb steht `src/assets/images/character/icons` im Sparse-Checkout von Dockerfile und Workflow. Gold behält über `--gold` seine eigene Farbe.
 
 Gegenstände kommen aus `items.json` von GHS. `itemTags()` im Import leitet aus dem englischen Regeltext grobe Merkmale ab, `scoreItem()` bewertet damit.
 

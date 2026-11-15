@@ -29,7 +29,7 @@ jobs:
           REF=$(sed -n 's/^ARG GHS_REF=//p' Dockerfile)
           git init -q ghs && cd ghs
           git remote add origin https://github.com/Lurkars/gloomhavensecretariat.git
-          git sparse-checkout set data/gh src/assets/locales
+          git sparse-checkout set data/gh src/assets/locales src/assets/images/character/icons
           git fetch -q --depth 1 --filter=blob:none origin "$REF"
           git checkout -q FETCH_HEAD
       - name: Spieldaten aufbereiten
