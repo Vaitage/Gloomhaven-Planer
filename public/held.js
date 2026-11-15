@@ -1,6 +1,6 @@
 // Charakterbildschirm: Erfahrung, Gold, Ausrüstung, Stufenaufstieg und Verbesserungen.
 // Bekommt alles Nötige über "ctx" von app.js, damit hier kein eigener Zustand lebt.
-import { xpProgress, XP_LEVELS, levelUpAdvice, shopAdvice, itemPrice, COIN_VALUE, reputationPriceChange, scoreItem, attackFit, slotStickers, enhancementCost, enhancementAdvice, buildDeck, deckStats, perkAdvice, guidePerk, perksAllowed } from './logic.js';
+import { xpProgress, XP_LEVELS, levelUpAdvice, shopAdvice, itemPrice, COIN_VALUE, prosperityLevel, PROSPERITY_STEPS, reputationPriceChange, scoreItem, attackFit, slotStickers, enhancementCost, enhancementAdvice, buildDeck, deckStats, perkAdvice, guidePerk, perksAllowed } from './logic.js';
 import { GUIDES } from './tipps.js';
 
 const SLOT_NAMEN = { head: 'Kopf', body: 'Körper', onehand: 'Eine Hand', twohand: 'Zwei Hände', legs: 'Beine', small: 'Kleiner Gegenstand' };
@@ -286,7 +286,17 @@ function grundeHtml(why) {
 }
 
 const ruf = (ctx) => ctx.state.shared.reputation || 0;
-// Preis mit Ruf, der aufgedruckte Preis steht dabei, wenn er abweicht
+// Wohlstand in Punkten. Alte Stände kennen nur die Stufe, dann zählt deren erster Punkt.
+function wohlstand(ctx) {
+  const sh = ctx.state.shared;
+  return prosperityLevel(sh.prosperityPoints != null ? sh.prosperityPoints : PROSPERITY_STEPS[(sh.prosperity || 1) - 1]);
+}
+function wohlstandSetzen(ctx, punkte) {
+  const w = prosperityLevel(punkte);
+  ctx.state.shared.prosperityPoints = w.points;
+  ctx.state.shared.prosperity = w.level;
+}
+// Preis mit Ansehen, der aufgedruckte Preis steht dabei, wenn er abweicht
 function preisText(ctx, item) {
   const preis = itemPrice(item, ruf(ctx));
   return preis === item.cost ? `${item.cost} Gold` : `${preis} Gold (aufgedruckt ${item.cost})`;
@@ -316,8 +326,8 @@ export function sucheHtml(ctx, q) {
 function rufText(r) {
   const d = reputationPriceChange(r);
   const naechste = Math.abs(r) < 3 ? 3 : Math.abs(r) >= 19 ? null : Math.floor((Math.abs(r) - 3) / 4) * 4 + 7;
-  const jetzt = d < 0 ? `Jeder Gegenstand kostet ${-d} Gold weniger.` : d > 0 ? `Jeder Gegenstand kostet ${d} Gold mehr.` : 'Bei diesem Ruf gelten die aufgedruckten Preise.';
-  const dann = naechste == null ? '' : r >= 0 ? ` Ab Ruf +${naechste} wird es ${d < 0 ? 'noch ' : ''}1 Gold billiger.` : ` Ab Ruf −${naechste} wird es ${d > 0 ? 'noch ' : ''}1 Gold teurer.`;
+  const jetzt = d < 0 ? `Jeder Gegenstand kostet ${-d} Gold weniger.` : d > 0 ? `Jeder Gegenstand kostet ${d} Gold mehr.` : 'Bei diesem Ansehen gelten die aufgedruckten Preise.';
+  const dann = naechste == null ? '' : r >= 0 ? ` Ab Ansehen +${naechste} wird es ${d < 0 ? 'noch ' : ''}1 Gold billiger.` : ` Ab Ansehen −${naechste} wird es ${d > 0 ? 'noch ' : ''}1 Gold teurer.`;
   return `${jetzt}${dann} Verkauft wird immer zum halben aufgedruckten Preis.`;
 }
 
@@ -337,7 +347,8 @@ function ausruestungHtml(ctx, p) {
       <button type="button" class="leise" data-act="item-weg" data-id="${item.id}">Entfernen</button>`, zusatz);
   }).join('');
 
-  const prosp = state.shared.prosperity || 1;
+  const wohl = wohlstand(ctx);
+  const prosp = wohl.level;
   const laden = shopAdvice(ctx.data, profil, { gold: p.gold, prosperity: prosp, reputation: ruf(ctx), owned: p.items.map((e) => e.id), cn: ctx.condName, cards: ctx.pool() });
   const leistbar = laden.filter((x) => x.affordable).slice(0, 4);
   const sparen = laden.filter((x) => !x.affordable).slice(0, 3);
@@ -363,16 +374,27 @@ function ausruestungHtml(ctx, p) {
     </section>
     <section>
       <h2>Was sich im Laden lohnt</h2>
-      <span class="feldname">Wohlstandsstufe eurer Stadt</span>
-      ${ctx.seg('prosperity', [1, 2, 3, 4, 5, 6, 7, 8, 9], prosp, 'Wohlstandsstufe')}
-      <p class="hinweis">Der Wohlstand bestimmt, welche Gegenstände es im Laden gibt.</p>
-      <span class="feldname">Ruf eurer Gruppe</span>
-      <div class="zaehler" role="group" aria-label="Ruf der Gruppe">
-        <button type="button" class="leise" data-act="ruf-minus" aria-label="Ruf um 1 senken" ${ruf(ctx) <= -20 ? 'disabled' : ''}>−</button>
-        <output aria-live="polite">${ruf(ctx) > 0 ? '+' : ruf(ctx) < 0 ? '−' : ''}${Math.abs(ruf(ctx))}</output>
-        <button type="button" class="leise" data-act="ruf-plus" aria-label="Ruf um 1 erhöhen" ${ruf(ctx) >= 20 ? 'disabled' : ''}>+</button>
+      <div class="gruppe">
+        <div>
+          <label class="feldname" for="wohlstandPunkte">Wohlstand der Stadt</label>
+          <div class="zaehler">
+            <button type="button" class="leise" data-act="wohlstand-minus" aria-label="Wohlstand um 1 senken" ${wohl.points <= 0 ? 'disabled' : ''}>−</button>
+            <input id="wohlstandPunkte" type="number" inputmode="numeric" enterkeyhint="done" min="0" max="64" value="${wohl.points}">
+            <button type="button" class="leise" data-act="wohlstand-plus" aria-label="Wohlstand um 1 erhöhen" ${wohl.points >= 64 ? 'disabled' : ''}>+</button>
+          </div>
+          <p class="hinweis"><b>Stufe ${wohl.level}.</b> ${wohl.missing ? `Noch ${wohl.missing === 1 ? '1 Punkt' : `${wohl.missing} Punkte`} bis Stufe ${wohl.level + 1}.` : 'Höchste Stufe.'} Die Stufe bestimmt, welche Gegenstände es im Laden gibt.</p>
+        </div>
+        <div>
+          <label class="feldname" for="ansehenWert">Ansehen eurer Gruppe</label>
+          <div class="zaehler">
+            <button type="button" class="leise" data-act="ruf-minus" aria-label="Ansehen um 1 senken" ${ruf(ctx) <= -20 ? 'disabled' : ''}>−</button>
+            <input id="ansehenWert" type="number" inputmode="numeric" enterkeyhint="done" min="-20" max="20" value="${ruf(ctx)}">
+            <button type="button" class="leise" data-act="ruf-plus" aria-label="Ansehen um 1 erhöhen" ${ruf(ctx) >= 20 ? 'disabled' : ''}>+</button>
+          </div>
+          <p class="hinweis">${rufText(ruf(ctx))}</p>
+        </div>
       </div>
-      <p class="hinweis">${rufText(ruf(ctx))}</p>
+      <p class="hinweis">Beide Werte stehen auf eurem Gruppenbogen und gelten für alle Helden.</p>
       <p class="hinweis">Bewertet für Szenario ${ctx.local.scenario} und deine Karten. Die Einordnung stammt aus dem Regeltext der Gegenstände und ist grob.</p>
       <h3 class="zwischen">Mit deinen ${p.gold} Gold bezahlbar</h3>
       <div class="g-liste">${leistbar.map(zeile).join('') || `<p class="leer">${p.gold ? 'Dafür reicht dein Gold gerade nicht.' : 'Trag unter „Übersicht“ dein Gold ein, dann siehst du hier, was du dir leisten kannst.'}</p>`}</div>
@@ -469,7 +491,7 @@ function verbessernHtml(ctx, p) {
   const { esc, state } = ctx;
   const list = (p.enh[p.classId] ||= []);
   const cards = ctx.pool();
-  const prosp = state.shared.prosperity || 1;
+  const prosp = wohlstand(ctx).level;
   const verbesserteKarten = new Set(list.map((e) => e.card)).size;
 
   // je Karte nur der beste Vorschlag, sonst füllt eine Karte die ganze Liste,
@@ -596,6 +618,12 @@ export function heldClick(ctx, b) {
     return fertig();
   }
   if (act === 'ep-bonus') { p.xp += Number(b.dataset.wert) || 0; p.xpGeschaetzt = false; return fertig(); }
+  if (act === 'wohlstand-plus' || act === 'wohlstand-minus') {
+    wohlstandSetzen(ctx, wohlstand(ctx).points + (act === 'wohlstand-plus' ? 1 : -1));
+    ctx.saveShared();
+    ctx.render();
+    return true;
+  }
   if (act === 'ruf-plus' || act === 'ruf-minus') {
     ctx.state.shared.reputation = Math.max(-20, Math.min(20, ruf(ctx) + (act === 'ruf-plus' ? 1 : -1)));
     ctx.saveShared();
@@ -688,6 +716,13 @@ export function heldInput(ctx, target) {
 }
 
 export function heldChange(ctx, target) {
+  if (target.id === 'wohlstandPunkte' || target.id === 'ansehenWert') {
+    if (target.id === 'wohlstandPunkte') wohlstandSetzen(ctx, target.value);
+    else ctx.state.shared.reputation = Math.max(-20, Math.min(20, Math.round(Number(target.value) || 0)));
+    ctx.saveShared();
+    ctx.render();
+    return true;
+  }
   if (target.id !== 'enhKarte') return false;
   ctx.local.enhCard = Number(target.value);
   ctx.render();

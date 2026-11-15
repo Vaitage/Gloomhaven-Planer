@@ -481,3 +481,11 @@ main { overflow-wrap: anywhere; }
 @media (max-width: 380px) { .abschluss { grid-template-columns: 1fr; } }
 .abschluss input { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--schiefer-hell); background: var(--schiefer); color: var(--pergament); font-size: 16px; font-variant-numeric: tabular-nums; }
 .knopfreihe + .gut-text { margin-top: 14px; }
+
+/* Wohlstand und Ansehen nebeneinander, auf schmalen Handys untereinander */
+.gruppe { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; margin-top: 6px; }
+.gruppe .feldname { display: block; }
+.zaehler input { width: 100%; min-width: 0; min-height: 48px; padding: 4px; text-align: center; border-radius: 6px; border: 1px solid var(--schiefer-hell); background: var(--schiefer); color: var(--pergament); font-family: var(--titel); font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; -moz-appearance: textfield; appearance: textfield; }
+.zaehler input::-webkit-outer-spin-button, .zaehler input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.gruppe .zaehler { display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; width: 100%; max-width: 220px; }
+@media (max-width: 520px) { .gruppe { grid-template-columns: 1fr; } }

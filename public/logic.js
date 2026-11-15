@@ -1022,15 +1022,26 @@ export function attackFit(cards) {
   return fit;
 }
 
-// Preisänderung im Laden durch den Ruf der Gruppe (Regelheft): ab ±3 je vier Punkte 1 Gold,
-// bei gutem Ruf billiger, bei schlechtem teurer, höchstens 5 Gold.
+// Wohlstand: so viele Punkte (Kreuze auf der Karte) braucht die Stadt für Stufe 1 bis 9
+export const PROSPERITY_STEPS = [0, 4, 9, 15, 22, 30, 39, 50, 64];
+
+// Stufe zu einer Punktzahl, dazu wie viele Punkte bis zur nächsten Stufe fehlen (null auf Stufe 9)
+export function prosperityLevel(points = 0) {
+  const p = Math.max(0, Math.min(PROSPERITY_STEPS[8], Math.round(Number(points) || 0)));
+  let level = 1;
+  while (level < 9 && p >= PROSPERITY_STEPS[level]) level++;
+  return { points: p, level, missing: level < 9 ? PROSPERITY_STEPS[level] - p : null };
+}
+
+// Preisänderung im Laden durch das Ansehen der Gruppe (Gruppenbogen, „Ladenpreis-Modifikator“): ab ±3 je vier Punkte 1 Gold,
+// bei gutem Ansehen billiger, bei schlechtem teurer, höchstens 5 Gold.
 export function reputationPriceChange(reputation = 0) {
   const r = Math.max(-20, Math.min(20, Math.round(Number(reputation) || 0)));
   const stufe = Math.abs(r) < 3 ? 0 : Math.min(5, Math.floor((Math.abs(r) - 3) / 4) + 1);
   return !stufe ? 0 : r > 0 ? -stufe : stufe;
 }
 
-// Kaufpreis eines Gegenstands bei diesem Ruf. Verkauft wird immer zum halben aufgedruckten Preis.
+// Kaufpreis eines Gegenstands bei diesem Ansehen. Verkauft wird immer zum halben aufgedruckten Preis.
 export function itemPrice(item, reputation = 0) {
   return Math.max(0, item.cost + reputationPriceChange(reputation));
 }

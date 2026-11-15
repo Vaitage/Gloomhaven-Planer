@@ -116,7 +116,7 @@ test('Zielreihenfolge stellt Bosse ans Ende', { skip: !withData }, () => {
 });
 
 // ---------- Szenariolänge, Initiative, Schaden ----------
-import { autoPlan, estimateRounds, calibration, initiativeOdds, incomingDamage, xpProgress, xpLevel, levelUpAdvice, enhancementCost, slotStickers, applyEnhancements, enhancementAdvice, scoreItem, shopAdvice, reputationPriceChange, itemPrice, itemPlan, scenarioReward } from '../public/logic.js';
+import { autoPlan, estimateRounds, calibration, initiativeOdds, incomingDamage, xpProgress, xpLevel, levelUpAdvice, enhancementCost, slotStickers, applyEnhancements, enhancementAdvice, scoreItem, shopAdvice, reputationPriceChange, itemPrice, itemPlan, scenarioReward, prosperityLevel } from '../public/logic.js';
 
 const sunHand = (scenarioId) => {
   const sun = data.characters.find((c) => c.id === 'sun');
@@ -408,4 +408,11 @@ test('Abschluss rechnet EP, Gold und Haken wie im Regelheft', () => {
   assert.equal(scenarioReward({ level: 0, won: true }).xp, 4);
   assert.equal(scenarioReward({ level: 7, won: true, coins: 1 }).gold, 6);
   assert.equal(scenarioReward({ level: 1, cardXp: -3, coins: 'x', goal: 5 }).checks, 2);
+});
+
+test('Wohlstandspunkte ergeben die Stufe', () => {
+  const stufe = { 0: 1, 3: 1, 4: 2, 8: 2, 9: 3, 14: 3, 15: 4, 21: 4, 22: 5, 25: 5, 29: 5, 30: 6, 38: 6, 39: 7, 49: 7, 50: 8, 63: 8, 64: 9, 99: 9 };
+  for (const [punkte, erwartet] of Object.entries(stufe)) assert.equal(prosperityLevel(Number(punkte)).level, erwartet, `Punkte ${punkte}`);
+  assert.equal(prosperityLevel(25).missing, 5);
+  assert.equal(prosperityLevel(64).missing, null);
 });
