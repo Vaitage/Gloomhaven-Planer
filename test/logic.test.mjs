@@ -433,3 +433,29 @@ test('Betäubung an einer Heilung zählt als Preis, nicht als Effekt auf Gegner'
   // Zustände an Angriffen bleiben Effekte auf Gegner
   for (const c of data.characters) for (const k of c.cards) for (const h of [k.top, k.bottom]) if (h.drawbacks.length) assert.ok(h.heal > 0 || /selbst|Verbündete/.test(h.text.join(' ')), `${k.nameEn}`);
 });
+
+test('Bei der Rast verlorene Karte lässt sich vorgeben, der Plan danach kommt ohne sie aus', { skip: !withData }, () => {
+  const sun = data.characters.find((c) => c.id === 'sun');
+  const profile = scenarioProfile(data, data.scenarios.find((x) => x.id === 1), 4, 1);
+  const pool = cardPool(sun, 1, []);
+  const { hand } = suggestHand(pool, profile, sun.handSize);
+  const cards = pool.filter((c) => hand.includes(c.id));
+  const vorschlag = gamePlan(cards, profile, { losses: 0 });
+  const rast = vorschlag.steps.find((s) => s.type === 'rest');
+  assert.equal(rast.index, 0);
+  assert.equal(rast.chosen, false);
+  assert.equal(rast.lose.id, rast.suggest.id);
+  const andere = rast.options.find((c) => c.id !== rast.suggest.id);
+  const plan = gamePlan(cards, profile, { losses: 0, restLosses: [andere.id] });
+  const steps = plan.steps;
+  const at = steps.findIndex((s) => s.type === 'rest');
+  assert.equal(steps[at].lose.id, andere.id);
+  assert.equal(steps[at].chosen, true);
+  assert.equal(steps[at].handAfter, cards.length - 1);
+  for (const s of steps.slice(at + 1)) if (s.type === 'round') for (const x of [s.top, s.bottom]) assert.notEqual(x.card.id, andere.id);
+  // bis zur Rast bleibt der Plan gleich, die Rundenzahl ohne Verlustaktionen auch
+  assert.deepEqual(steps.slice(0, at).map((s) => s.type === 'round' && [s.top.card.id, s.bottom.card.id]), vorschlag.steps.slice(0, at).map((s) => s.type === 'round' && [s.top.card.id, s.bottom.card.id]));
+  assert.equal(plan.rounds, vorschlag.rounds);
+  // eine Karte, die gar nicht im Ablagestapel liegt, wird ignoriert
+  assert.equal(gamePlan(cards, profile, { losses: 0, restLosses: [-1] }).steps.find((s) => s.type === 'rest').chosen, false);
+});

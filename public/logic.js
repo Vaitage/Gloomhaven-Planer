@@ -574,6 +574,7 @@ export function calibration(results) {
 // opts.target: geschätzte Szenariolänge. Ist sie bekannt, kommen Verlustaktionen früh.
 // opts.longRest: lange Rasten (Karte frei wählbar, kostet eine Runde)
 // opts.tank: du willst die Angriffe auf dich ziehen
+// opts.restLosses: Karten-IDs, die bei den bisherigen Rasten tatsächlich verloren gingen (der Reihe nach)
 // opts.staminaItems: getragene Ausdauertränke ({ id, name, n }), jeder holt einmal n abgeworfene Karten zurück
 export function gamePlan(cards, profile, opts = {}) {
   const cn = opts.conditionName;
@@ -600,6 +601,8 @@ export function gamePlan(cards, profile, opts = {}) {
   let xp = 0;
   const lostPlayed = [];
   const potions = [...(opts.staminaItems || [])];
+  const restLosses = opts.restLosses || [];
+  let restIndex = 0;
   let extra = false; // die Hand besteht gerade nur aus zurückgeholten Karten
 
   for (let guard = 0; guard < 60 && hand.length >= 2; guard++) {
@@ -660,11 +663,16 @@ export function gamePlan(cards, profile, opts = {}) {
     if (discard.length < 2) break;
     // Rasten: die Karte abgeben, die für dieses Szenario am wenigsten bringt
     const worst = discard.reduce((b, c) => (val[c.id].card < val[b.id].card ? c : b), discard[0]);
-    discard = discard.filter((c) => c !== worst);
+    // opts.restLosses: was bei der 1., 2., ... Rast wirklich verloren ging (Karten-ID), sonst der Vorschlag
+    const options = [...discard];
+    const actual = discard.find((c) => c.id === restLosses[restIndex]);
+    const lose = actual || worst;
+    discard = discard.filter((c) => c !== lose);
     hand = [...hand, ...discard];
     discard = [];
     if (longRest) round++;
-    steps.push({ type: 'rest', long: longRest, n: longRest ? round : null, lose: worst, handAfter: hand.length, reserve: target > 0 && round > target });
+    steps.push({ type: 'rest', index: restIndex, long: longRest, n: longRest ? round : null, lose, suggest: worst, chosen: !!actual, options, handAfter: hand.length, reserve: target > 0 && round > target });
+    restIndex++;
     cycle++;
     carried = [];
     if (hand.length < 2) break;

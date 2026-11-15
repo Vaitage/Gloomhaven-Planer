@@ -489,3 +489,8 @@ main { overflow-wrap: anywhere; }
 .zaehler input::-webkit-outer-spin-button, .zaehler input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .gruppe .zaehler { display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; width: 100%; max-width: 220px; }
 @media (max-width: 520px) { .gruppe { grid-template-columns: 1fr; } }
+
+/* Rast: tatsächlich verlorene Karte wählen */
+.rast-wahl { display: grid; gap: 4px; margin: 8px 0 6px; font-size: .9rem; color: var(--pergament-leise); }
+.rast.gewaehlt { border-style: solid; border-color: var(--klasse); }
+.text-knopf { background: none; border: 0; padding: 10px 0; min-height: 44px; color: var(--klasse); text-decoration: underline; font: inherit; }
