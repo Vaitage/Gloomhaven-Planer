@@ -601,6 +601,13 @@ function itemTags(raw, item) {
   return t;
 }
 
+// Überarbeitete Auflage (auch die deutsche Ausgabe): Die Ausdauertränke holen eine Karte weniger
+// zurück, als die GHS-Daten der ersten Auflage sagen. Vom Nutzer an der gedruckten Karte bestätigt (Nr. 13).
+const REVISED_ITEMS = {
+  13: { stamina: 1, text: [/bis zu 2 deiner abgeworfenen Karten/, '1 deiner abgeworfenen Karten'] },
+  34: { stamina: 2, text: [/bis zu 3 deiner abgeworfenen Karten/, 'bis zu 2 deiner abgeworfenen Karten'] },
+};
+
 const items = [];
 if (existsSync(join(GH, 'items.json'))) {
   for (const it of readJson(join(GH, 'items.json'))) {
@@ -620,6 +627,12 @@ if (existsSync(join(GH, 'items.json'))) {
       tags: itemTags(linesEn.join(' '), it),
       img: itemImage(it.id, it.name),
     });
+    const rev = REVISED_ITEMS[it.id];
+    if (rev) {
+      const item = items[items.length - 1];
+      item.tags.stamina = rev.stamina;
+      item.text = item.text.replace(rev.text[0], rev.text[1]);
+    }
   }
 }
 

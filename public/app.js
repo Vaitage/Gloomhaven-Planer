@@ -491,7 +491,7 @@ function actionHtml(x, where) {
 
 function stepHtml(s, einsatz = []) {
   if (s.type === 'item') {
-    return `<li class="rast trank ${s.reserve ? 'reserve' : ''}"><p><b>${esc(s.item.name)}</b> trinken: hol <b>${s.cards.map((c) => esc(c.name)).join('</b> und <b>')}</b> zurück auf die Hand.</p><p class="hinweis">Das bringt eine Runde mehr, bevor du rasten musst.</p></li>`;
+    return `<li class="rast trank ${s.reserve ? 'reserve' : ''}"><p><b>${esc(s.item.name)}</b> trinken: hol <b>${s.cards.map((c) => esc(c.name)).join('</b> und <b>')}</b> zurück auf die Hand.</p><p class="hinweis">${s.cards.length === 1 ? 'Mit der Karte, die du noch auf der Hand hast, ist das eine Runde mehr, bevor du rasten musst.' : 'Das bringt eine Runde mehr, bevor du rasten musst.'}</p></li>`;
   }
   if (s.type === 'event') {
     const text = s.kind === 'lose'

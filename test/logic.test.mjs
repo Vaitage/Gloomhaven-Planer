@@ -228,13 +228,15 @@ test('Verbesserungskosten folgen dem Regelheft', { skip: !withData }, () => {
 test('Gegenstände sind importiert und werden passend bewertet', { skip: !withData }, () => {
   assert.equal(data.items.length, 150);
   const trank = data.items.find((i) => i.id === 13);
-  assert.equal(trank.tags.stamina, 2);
+  assert.equal(trank.tags.stamina, 1); // überarbeitete Auflage: nur noch eine Karte
+  assert.match(trank.text, /1 deiner abgeworfenen Karten/);
+  assert.equal(data.items.find((i) => i.id === 34).tags.stamina, 2);
   assert.equal(trank.slot, 'small');
   assert.ok(trank.img.endsWith('gh-013-minor-stamina-potion.png'));
   const { profile, pool } = sunHand(1);
   const laden = shopAdvice(data, profile, { gold: 30, prosperity: 1, cards: pool });
   assert.equal(laden.length, 14);
-  assert.equal(laden[0].item.id, 13);
+  assert.ok(laden.slice(0, 3).some((x) => x.item.id === 13), 'der Ausdauertrank gehört zu den besten Käufen');
   assert.ok(laden.every((x) => x.item.prosperity === 1));
   assert.equal(shopAdvice(data, profile, { gold: 30, prosperity: 1, owned: [13], cards: pool }).some((x) => x.item.id === 13), false);
   // Der Bogen wirkt nur bei Fernangriffen, davon hat die Sonnenhüterin auf Stufe 1 kaum welche
@@ -359,23 +361,36 @@ test('Ausdauertrank bringt im Plan eine Runde mehr und holt nur abgeworfene Kart
   const pool = cardPool(sun, 1, []);
   const { hand } = suggestHand(pool, profile, sun.handSize);
   const cards = pool.filter((c) => hand.includes(c.id));
-  const trank = data.items.find((i) => i.id === 13);
   const ohne = gamePlan(cards, profile, { losses: 0 });
-  const mit = gamePlan(cards, profile, { losses: 0, staminaItems: [{ id: 13, name: trank.name, n: trank.tags.stamina }] });
-  assert.equal(mit.rounds, ohne.rounds + 1);
-  assert.equal(mit.itemsUsed, 1);
-  // die zurückgeholten Karten wurden im selben Zyklus schon gespielt und kommen direkt danach wieder dran
-  const at = mit.steps.findIndex((s) => s.type === 'item');
-  const vorher = new Set(mit.steps.slice(0, at).filter((s) => s.type === 'round').flatMap((s) => [s.top.card.id, s.bottom.card.id]));
-  const step = mit.steps[at];
-  assert.equal(step.cards.length, 2);
-  for (const c of step.cards) assert.ok(vorher.has(c.id));
-  const danach = mit.steps[at + 1];
-  assert.equal(danach.type, 'round');
-  assert.equal(danach.finale, false);
-  for (const x of [danach.top, danach.bottom]) assert.ok(step.cards.some((c) => c.id === x.card.id));
-  // ohne Freigabe weiterhin keine Verlustaktion
-  for (const s of mit.steps.filter((x) => x.type === 'round')) for (const x of [s.top, s.bottom]) assert.ok(x.basic || !x.card[x.side].lost || s.finale);
+  for (const [id, n] of [[13, 1], [34, 2]]) {
+    const trank = data.items.find((i) => i.id === id);
+    assert.equal(trank.tags.stamina, n);
+    const mit = gamePlan(cards, profile, { losses: 0, staminaItems: [{ id, name: trank.name, n }] });
+    assert.equal(mit.rounds, ohne.rounds + 1, `Trank ${id}`);
+    assert.equal(mit.itemsUsed, 1);
+    const at = mit.steps.findIndex((s) => s.type === 'item');
+    const step = mit.steps[at];
+    assert.equal(step.cards.length, n);
+    // zurückgeholt wird nur, was im selben Zyklus schon gespielt wurde
+    const zyklus = mit.steps.slice(0, at).filter((s) => s.type === 'round');
+    const vorher = new Set(zyklus.flatMap((s) => [s.top.card.id, s.bottom.card.id]));
+    for (const c of step.cards) assert.ok(vorher.has(c.id));
+    // direkt danach folgt eine Runde, in der jede zurückgeholte Karte gespielt wird, dann die Rast
+    const danach = mit.steps[at + 1];
+    assert.equal(danach.type, 'round');
+    const gespielt = [danach.top.card.id, danach.bottom.card.id];
+    for (const c of step.cards) assert.ok(gespielt.includes(c.id));
+    assert.equal(mit.steps[at + 2].type, 'rest');
+    // ohne Freigabe weiterhin keine Verlustaktion
+    for (const s of mit.steps.filter((x) => x.type === 'round')) for (const x of [s.top, s.bottom]) assert.ok(x.basic || !x.card[x.side].lost || s.finale);
+  }
+  // der kleine Trank mit einer Karte wartet auf einen Zyklus, in dem eine Karte auf der Hand übrig bleibt
+  const klein = gamePlan(cards, profile, { losses: 0, staminaItems: [{ id: 13, name: 'x', n: 1 }] });
+  const at = klein.steps.findIndex((s) => s.type === 'item');
+  const runden = klein.steps.slice(0, at).filter((s) => s.type === 'round');
+  const rasten = klein.steps.slice(0, at).filter((s) => s.type === 'rest').length;
+  assert.equal((cards.length - rasten) % 2, 1, 'ungerade Handgröße im Zyklus des Tranks');
+  assert.ok(runden.length > 0);
 });
 
 test('Jeder getragene Gegenstand bekommt einen Einsatzvorschlag', { skip: !withData }, () => {

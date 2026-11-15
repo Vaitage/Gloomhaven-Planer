@@ -580,7 +580,8 @@ export function calibration(results) {
 //   Die Runden bis dahin bleiben, wie sie ohne die Eingabe wären, alles danach wird neu geplant.
 //   type 'basic' mit side 'top' | 'bottom': in Runde "after" wurde von der Karte nur die Standardaktion gespielt.
 // opts.eventBudgets: je Eingabe, wie viele Verlustaktionen danach noch eingeplant werden dürfen
-// opts.staminaItems: getragene Ausdauertränke ({ id, name, n }), jeder holt einmal n abgeworfene Karten zurück
+// opts.staminaItems: getragene Ausdauertränke ({ id, name, n }), jeder holt einmal n abgeworfene Karten zurück.
+//   Getrunken wird vor einer Rast, sobald daraus eine zusätzliche Runde wird.
 export function gamePlan(cards, profile, opts = {}) {
   const cn = opts.conditionName;
   let budget = opts.losses ?? 2;
@@ -718,9 +719,11 @@ export function gamePlan(cards, profile, opts = {}) {
       if (hand.length >= 2) continue;
     }
     // Ausdauertrank: vor der Rast die stärksten abgeworfenen Karten zurückholen und noch einmal spielen
-    if (!forced && potions.length && discard.length >= 2) {
-      const item = potions.shift();
-      const back = [...discard].sort((a, b) => val[b.id].card - val[a.id].card).slice(0, Math.max(2, item.n || 2));
+    // Nur wenn daraus eine ganze Runde wird: mit einer zurückgeholten Karte braucht es noch eine auf der Hand.
+    const potionAt = forced ? -1 : potions.findIndex((x) => discard.length >= (x.n || 1) && hand.length + (x.n || 1) >= 2);
+    if (potionAt >= 0) {
+      const [item] = potions.splice(potionAt, 1);
+      const back = [...discard].sort((a, b) => val[b.id].card - val[a.id].card).slice(0, item.n || 1);
       discard = discard.filter((c) => !back.includes(c));
       hand = [...hand, ...back];
       steps.push({ type: 'item', n: round, item, cards: back, reserve: target > 0 && round >= target });
@@ -801,7 +804,9 @@ export function itemPlan(plan, items, profile, opts = {}) {
     if (t.stamina) {
       const step = plan.steps.find((s) => s.type === 'item' && s.item.id === item.id);
       if (!step) return out(null, 'Kurz bevor du rasten müsstest', 'Holt abgeworfene Karten zurück: eine Runde mehr.');
-      return out(step.n, `Nach Runde ${step.n}, bevor du rastest`, `Hol ${step.cards.map((c) => c.name).join(' und ')} zurück: eine Runde mehr, mit deinen stärksten Karten.`);
+      return out(step.n, `Nach Runde ${step.n}, bevor du rastest`, step.cards.length === 1
+        ? `Hol ${step.cards[0].name} zurück. Zusammen mit der Karte, die du noch auf der Hand hast, ist das eine Runde mehr.`
+        : `Hol ${step.cards.map((c) => c.name).join(' und ')} zurück: eine Runde mehr, mit deinen stärksten Karten.`);
     }
     if (item.use === 'passive') return out(null, 'Wirkt dauerhaft', 'Nichts zu tun.');
     if (t.attack || t.pierce || t.advantage || (t.inflict || []).length || (t.selfBuff || []).includes('strengthen')) {
@@ -1071,7 +1076,7 @@ export function scoreItem(item, p, cn = (c) => c, fit = null) {
   const why = [];
   const add = (x, text) => { v += x; if (text) why.push(text); };
   const bad = (p.inflicts.poison || 0) + (p.inflicts.wound || 0);
-  if (t.stamina) add(3 * t.stamina, 'Holt gespielte Karten zurück: mehr Runden und deine beste Aktion ein zweites Mal');
+  if (t.stamina) add(2 + 2 * t.stamina, t.stamina === 1 ? 'Holt eine gespielte Karte zurück: oft eine Runde mehr und deine beste Aktion ein zweites Mal' : 'Holt gespielte Karten zurück: mehr Runden und deine beste Aktion ein zweites Mal');
   if (t.move) add(1.2 * t.move + (p.rangedShare >= 0.4 ? 1 : 0), p.rangedShare >= 0.4 ? 'Mehr Bewegung, um die Fernkämpfer zu erreichen' : 'Mehr Bewegung');
   if (t.jump) add(1.2, 'Über Hindernisse und Gegner hinweg');
   if (t.shield) {
