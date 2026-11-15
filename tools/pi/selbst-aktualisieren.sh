@@ -168,7 +168,9 @@ if (cd "$HAUPT" && docker compose build -q >/dev/null 2>"$CACHE/build.err" && do
   status_schreiben 0
   # Neueste Fassung dieses Skripts für den nächsten Lauf
   install -m 755 "$HAUPT/tools/pi/selbst-aktualisieren.sh" "$HOME/.local/bin/gloomhaven-update.sh"
-  docker image prune -f >/dev/null 2>&1 || true
+  # Nur alte Images dieses Projekts löschen, nie die anderer Projekte auf dem Pi
+  # (Münzwerk & Co. räumen ihre eigenen auf). Compose setzt das Label beim Build.
+  docker image prune -f --filter "label=com.docker.compose.project=gloomhaven-planer" >/dev/null 2>&1 || true
   exit 0
 fi
 

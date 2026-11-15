@@ -1,3 +1,6 @@
+# Fester Projektname, unabhängig vom Ordnernamen. Der Update-Dienst löscht alte
+# Images nur mit diesem Namen (Label com.docker.compose.project).
+name: gloomhaven-planer
 services:
   gloomhaven-planer:
     build: .
