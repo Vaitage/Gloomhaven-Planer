@@ -69,6 +69,12 @@ async function request(path, options) {
 const timers = {};
 function saveLater(key, path, getBody) {
   clearTimeout(timers[key]);
+  // Geräte-Variante: sofort ablegen, damit nichts verloren geht, wenn die App gleich geschlossen wird
+  if (OHNE_SERVER) {
+    try { localStorage.setItem(GERAET_KEY, JSON.stringify(state)); setStatus('Auf dem Gerät gespeichert'); }
+    catch { setStatus('Nicht gespeichert. Gerätespeicher prüfen.', true); }
+    return;
+  }
   setStatus('Speichert …');
   timers[key] = setTimeout(async () => {
     try {
@@ -158,9 +164,9 @@ function renderHeader() {
   const c = character();
   const imSetup = local.tab === 'setup' && local.setup;
   applyTheme(imSetup ? setupFarbe(heldCtx) : c ? c.color : null);
-  $('#heldName').textContent = c ? c.name : imSetup ? 'Neuer Charakter' : 'Held wählen';
+  $('#heldName').textContent = c ? c.name : imSetup ? 'Neuer Charakter' : Object.keys(state.profiles).length ? 'Held wählen' : 'Held anlegen';
   if (p) heldDefaults(p);
-  $('#heldSub').textContent = p && c ? `Stufe ${p.level}, ${p.gold} Gold` : 'Tippen zum Einrichten';
+  $('#heldSub').textContent = p && c ? `Stufe ${p.level}, ${p.gold} Gold` : imSetup ? 'Einrichtung' : 'Tippen zum Einrichten';
   $('#heldBtn').classList.toggle('aktiv', local.tab === 'held');
   const mini = $('#miniEp');
   mini.parentElement.hidden = !(p && c);
@@ -673,6 +679,10 @@ async function askUpdate(aktion) {
 // ---------- Darstellung und Ereignisse ----------
 
 function render() {
+  // Solange noch kein Held angelegt ist, führt jeder Weg ins Erst-Setup
+  const erststart = !Object.keys(state.profiles).length;
+  if (erststart) { if (!local.setup) setupStart(heldCtx); local.tab = 'setup'; }
+  document.body.classList.toggle('erststart', erststart);
   renderHeader();
   if (local.tab === 'setup' && !local.setup) local.tab = profile() ? 'held' : 'szenario';
   if (local.tab === 'setup') { renderHeader(); return renderSetup(heldCtx); }

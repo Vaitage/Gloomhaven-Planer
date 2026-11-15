@@ -444,3 +444,8 @@ main { overflow-wrap: anywhere; }
 @media (min-width: 752px) and (max-width: 899.98px) {
   .kopf { padding-left: max(var(--rand), calc((100vw - 720px) / 2 + var(--rand))); padding-right: max(var(--rand), calc((100vw - 720px) / 2 + var(--rand))); }
 }
+
+/* Erster Start ohne Held: nur das Setup, die Reiter kommen danach */
+.erststart .reiter { display: none; }
+.erststart { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.erststart .setup-knoepfe { bottom: env(safe-area-inset-bottom, 0px); }
