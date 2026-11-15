@@ -505,7 +505,6 @@ function stepHtml(s, einsatz = []) {
       <p class="hinweis">Danach ${s.handAfter} Karten auf der Hand.${s.chosen ? '' : ' Wählst du eine andere Karte, wird der Plan ab hier neu gerechnet.'}</p></li>`;
   }
   const notes = [...s.notes];
-  if (s.selfFed.length) notes.push(`${s.selfFed.map(elemName).join(', ')} erzeugst und verbrauchst du im selben Zug: erst die erzeugende Aktion ausführen.`);
   if (s.fed.length) notes.push(`Nutzt ${s.fed.map(elemName).join(', ')} aus der Vorrunde.`);
   if (s.hungry.length) notes.push(`Der Bonus braucht ${s.hungry.map(elemName).join(', ')} von einem Mitspieler.`);
   if (s.lost.length) notes.push(s.finale ? 'Letzte Runde: Verlustaktionen kosten jetzt nichts mehr.' : 'Verlustaktion eingeplant. Nur spielen, wenn sie hier wirklich viel bewirkt.');

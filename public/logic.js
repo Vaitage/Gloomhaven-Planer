@@ -475,9 +475,9 @@ function pairOption(a, b, val, enabled, basicAttack) {
   if (moves >= 3 && (melee(th) || melee(bh))) value += 0.5;
   const gen = [...(th.gen || []), ...(bh.gen || [])];
   const use = [...(th.use || []), ...(bh.use || [])].filter((e) => e !== 'wild');
-  const self = use.filter((e) => gen.includes(e));
-  if (self.length) { value += 1.5; }
-  return { top, bottom, value, notes, gen, use, selfFed: self };
+  // Ein Element, das du in diesem Zug erzeugst, ist erst ab dem Ende deines Zuges da.
+  // Die andere Aktion desselben Zuges kann es also nicht verbrauchen.
+  return { top, bottom, value, notes, gen, use };
 }
 
 // Beste Aufteilung der Handkarten in Zweierpaare (exakt, über alle Teilmengen).
@@ -512,12 +512,13 @@ function bestPairing(cards, val, enabled, basicAttack) {
   return solve((1 << n) - 1, n % 2 === 1);
 }
 
-// Reihenfolge der Runden im Zyklus: Aufbau zuerst, Elemente erst erzeugen, dann verbrauchen.
+// Reihenfolge der Runden im Zyklus: Aufbau zuerst, Elemente in einer Runde erzeugen und in der
+// nächsten verbrauchen (dort sind sie noch schwindend vorhanden, danach verfallen sie).
 function orderRounds(pairs, carried) {
   const rest = [...pairs];
   const out = [];
   let avail = new Set(carried);
-  const needs = (p) => p.use.filter((e) => !p.selfFed.includes(e));
+  const needs = (p) => p.use;
   const take = (i) => { const [p] = rest.splice(i, 1); p.fed = needs(p).filter((e) => avail.has(e)); p.hungry = needs(p).filter((e) => !avail.has(e)); out.push(p); avail = new Set(p.gen); };
   while (rest.length) {
     let i = rest.findIndex((p) => isSetup(p.top.half) || isSetup(p.bottom.half));
@@ -641,7 +642,7 @@ export function gamePlan(cards, profile, opts = {}) {
         type: 'round', n: round, cycle, value: round1(p.value), top: p.top, bottom: p.bottom,
         lead, other: lead === inis[0] ? inis[1] : inis[0], leadWhy, beforeEnemies: lead < enemyInit,
         odds: initiativeOdds(profile, lead),
-        notes: p.notes, selfFed: p.selfFed, fed: p.fed || [], hungry: p.hungry || [],
+        notes: p.notes, fed: p.fed || [], hungry: p.hungry || [],
         lost: lostNow.map((x) => x.card.id), finale, reserve: target > 0 && round > target,
       });
       const gone = new Set(lostNow.map((x) => x.card.id));

@@ -459,3 +459,24 @@ test('Bei der Rast verlorene Karte lässt sich vorgeben, der Plan danach kommt o
   // eine Karte, die gar nicht im Ablagestapel liegt, wird ignoriert
   assert.equal(gamePlan(cards, profile, { losses: 0, restLosses: [-1] }).steps.find((s) => s.type === 'rest').chosen, false);
 });
+
+test('Ein selbst erzeugtes Element zählt erst in der nächsten Runde', { skip: !withData }, () => {
+  for (const id of ['sun', 'spellweaver', 'eclipse']) {
+    const cls = data.characters.find((c) => c.id === id);
+    const profile = scenarioProfile(data, data.scenarios.find((x) => x.id === 1), 4, 1);
+    const pool = cardPool(cls, 1, []);
+    const { hand } = suggestHand(pool, profile, cls.handSize);
+    const plan = gamePlan(pool.filter((c) => hand.includes(c.id)), profile, { losses: 2 });
+    let vorher = null;
+    for (const s of plan.steps) {
+      if (s.type !== 'round') { if (s.type === 'rest') vorher = null; continue; }
+      const gen = [...(s.top.half.gen || []), ...(s.bottom.half.gen || [])];
+      const use = [...(s.top.half.use || []), ...(s.bottom.half.use || [])].filter((e) => e !== 'wild');
+      assert.equal(s.selfFed, undefined);
+      // versorgt ist nur, was die Runde davor erzeugt hat, alles andere fehlt
+      for (const e of s.fed) assert.ok(vorher && vorher.includes(e), `${id} Runde ${s.n}: ${e}`);
+      assert.deepEqual([...s.fed, ...s.hungry].sort(), [...use].sort());
+      vorher = gen;
+    }
+  }
+});
