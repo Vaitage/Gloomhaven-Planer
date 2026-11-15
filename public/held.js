@@ -194,7 +194,7 @@ function rechner(id, label, plus, minus) {
   return `
     <div class="rechner">
       <label class="sr" for="${id}">${label}</label>
-      <input id="${id}" type="number" inputmode="numeric" min="0" max="9999" placeholder="${label}">
+      <input id="${id}" type="number" inputmode="numeric" enterkeyhint="done" min="0" max="9999" placeholder="${label}">
       <button type="button" class="haupt" data-act="${plus}">Dazurechnen</button>
       <button type="button" class="leise" data-act="${minus}">Abziehen</button>
     </div>`;
@@ -341,7 +341,7 @@ function ausruestungHtml(ctx, p) {
     <section>
       <h2>Gegenstand suchen</h2>
       <label class="sr" for="itemSuche">Name oder Nummer</label>
-      <input id="itemSuche" class="suche" type="search" autocomplete="off" placeholder="Name oder Nummer, z. B. Stiefel oder 13" value="${esc(ctx.local.itemSuche || '')}">
+      <input id="itemSuche" class="suche" type="search" autocomplete="off" enterkeyhint="search" autocapitalize="none" placeholder="Name oder Nummer, z. B. Stiefel oder 13" value="${esc(ctx.local.itemSuche || '')}">
       <div id="itemTreffer" class="g-liste">${sucheHtml(ctx, ctx.local.itemSuche)}</div>
       <p class="hinweis">Die Suche kennt alle 150 Gegenstände, auch solche, die ihr noch nicht freigeschaltet habt. Die Nummer verrät nichts.</p>
     </section>

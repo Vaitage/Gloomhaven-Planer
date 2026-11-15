@@ -53,11 +53,11 @@ function standHtml(ctx, d) {
   const bis = d.level < 9 ? XP_LEVELS[d.level] - 1 : null;
   return `
     <label class="feld" for="setupXp">Erfahrungspunkte
-      <input id="setupXp" data-setup="xp" type="number" inputmode="numeric" min="0" max="999" placeholder="${von}" value="${ctx.esc(d.xp)}">
+      <input id="setupXp" data-setup="xp" type="number" inputmode="numeric" enterkeyhint="done" min="0" max="999" placeholder="${von}" value="${ctx.esc(d.xp)}">
     </label>
     <p class="hinweis">Auf Stufe ${d.level} liegt der Stand ${bis == null ? `bei ${von} oder mehr` : `zwischen ${von} und ${bis}`}. Lässt du das Feld leer, trägt die App ${von} ein.</p>
     <label class="feld" for="setupGold">Gold
-      <input id="setupGold" data-setup="gold" type="number" inputmode="numeric" min="0" max="9999" placeholder="0" value="${ctx.esc(d.gold)}">
+      <input id="setupGold" data-setup="gold" type="number" inputmode="numeric" enterkeyhint="done" min="0" max="9999" placeholder="0" value="${ctx.esc(d.gold)}">
     </label>
     <div class="haken-zeile">
       <span>Kampfziel-Haken</span>
@@ -129,7 +129,7 @@ function setupAusruestungHtml(ctx, d) {
   return `
     <p>Welche Gegenstände besitzt dein Charakter schon? Du kannst das auch später im Charakterbildschirm nachtragen.</p>
     <label class="sr" for="setupSuche">Name oder Nummer</label>
-    <input id="setupSuche" class="suche" type="search" data-setup="suche" autocomplete="off" placeholder="Name oder Nummer, z. B. Stiefel oder 13" value="${ctx.esc(d.suche)}">
+    <input id="setupSuche" class="suche" type="search" data-setup="suche" autocomplete="off" enterkeyhint="search" autocapitalize="none" placeholder="Name oder Nummer, z. B. Stiefel oder 13" value="${ctx.esc(d.suche)}">
     <div id="setupTreffer">${setupTrefferHtml(ctx, d)}</div>
     <h3 class="zwischen">Eingetragen: ${eigene.length}</h3>
     ${eigene.length ? `<ul class="perks">${eigene.map((i) => itemZeile(ctx, i, true)).join('')}</ul>` : '<p class="leer">Noch nichts eingetragen.</p>'}`;

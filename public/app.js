@@ -246,7 +246,7 @@ function scenarioBar() {
     <section class="szenario-kopf">
       <div class="nummer">
         <button type="button" data-act="szen-" aria-label="Vorheriges Szenario">‹</button>
-        <label><span class="sr">Szenarionummer</span><input id="szenNr" type="number" inputmode="numeric" min="1" max="95" value="${s.id}"></label>
+        <label><span class="sr">Szenarionummer</span><input id="szenNr" type="number" inputmode="numeric" enterkeyhint="done" min="1" max="95" value="${s.id}"></label>
         <button type="button" data-act="szen+" aria-label="Nächstes Szenario">›</button>
       </div>
       <h1>${esc(s.name)}</h1>
@@ -585,7 +585,7 @@ function renderNotes() {
       <h2>Wie lief es?</h2>
       <div class="rechner">
         <label for="ergRunden">Gespielte Runden</label>
-        <input id="ergRunden" type="number" inputmode="numeric" min="1" max="60" placeholder="Runden" value="${res ? res.rounds : ''}">
+        <input id="ergRunden" type="number" inputmode="numeric" enterkeyhint="done" min="1" max="60" placeholder="Runden" value="${res ? res.rounds : ''}">
       </div>
       <div class="knopfreihe">
         <button type="button" class="haupt" data-act="erg" data-won="1">Gewonnen eintragen</button>
