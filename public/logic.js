@@ -928,13 +928,26 @@ export function attackFit(cards) {
   return fit;
 }
 
+// Preisänderung im Laden durch den Ruf der Gruppe (Regelheft): ab ±3 je vier Punkte 1 Gold,
+// bei gutem Ruf billiger, bei schlechtem teurer, höchstens 5 Gold.
+export function reputationPriceChange(reputation = 0) {
+  const r = Math.max(-20, Math.min(20, Math.round(Number(reputation) || 0)));
+  const stufe = Math.abs(r) < 3 ? 0 : Math.min(5, Math.floor((Math.abs(r) - 3) / 4) + 1);
+  return !stufe ? 0 : r > 0 ? -stufe : stufe;
+}
+
+// Kaufpreis eines Gegenstands bei diesem Ruf. Verkauft wird immer zum halben aufgedruckten Preis.
+export function itemPrice(item, reputation = 0) {
+  return Math.max(0, item.cost + reputationPriceChange(reputation));
+}
+
 // Kaufempfehlung: was es bei eurer Wohlstandsstufe im Laden gibt, sortiert nach Nutzen.
 export function shopAdvice(data, p, opts = {}) {
-  const { gold = 0, prosperity = 1, owned = [], cn, cards = null } = opts;
+  const { gold = 0, prosperity = 1, reputation = 0, owned = [], cn, cards = null } = opts;
   const fit = cards ? attackFit(cards) : null;
   return (data.items || [])
     .filter((it) => it.prosperity > 0 && it.prosperity <= prosperity && !owned.includes(it.id))
-    .map((item) => ({ item, ...scoreItem(item, p, cn, fit), affordable: item.cost <= gold }))
+    .map((item) => { const price = itemPrice(item, reputation); return { item, ...scoreItem(item, p, cn, fit), price, affordable: price <= gold }; })
     .sort((a, b) => b.score - a.score);
 }
 

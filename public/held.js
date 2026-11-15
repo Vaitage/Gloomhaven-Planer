@@ -1,6 +1,6 @@
 // Charakterbildschirm: Erfahrung, Gold, Ausrüstung, Stufenaufstieg und Verbesserungen.
 // Bekommt alles Nötige über "ctx" von app.js, damit hier kein eigener Zustand lebt.
-import { xpProgress, XP_LEVELS, levelUpAdvice, shopAdvice, scoreItem, attackFit, slotStickers, enhancementCost, enhancementAdvice, buildDeck, deckStats, perkAdvice, guidePerk, perksAllowed } from './logic.js';
+import { xpProgress, XP_LEVELS, levelUpAdvice, shopAdvice, itemPrice, reputationPriceChange, scoreItem, attackFit, slotStickers, enhancementCost, enhancementAdvice, buildDeck, deckStats, perkAdvice, guidePerk, perksAllowed } from './logic.js';
 import { GUIDES } from './tipps.js';
 
 const SLOT_NAMEN = { head: 'Kopf', body: 'Körper', onehand: 'Eine Hand', twohand: 'Zwei Hände', legs: 'Beine', small: 'Kleiner Gegenstand' };
@@ -273,7 +273,7 @@ function gegenstandHtml(ctx, item, knoepfe, zusatz = '') {
       ${bild}
       <div class="g-inhalt">
         <h3>${esc(item.name)} <small>Nr. ${item.id}</small></h3>
-        <p class="g-meta">${SLOT_NAMEN[item.slot] || item.slot}, ${item.cost} Gold, ${NUTZUNG[item.use]}</p>
+        <p class="g-meta">${SLOT_NAMEN[item.slot] || item.slot}, ${preisText(ctx, item)}, ${NUTZUNG[item.use]}</p>
         ${item.text ? `<p class="g-text">${esc(item.text)}</p>` : ''}
         ${zusatz}
         <footer>${knoepfe}</footer>
@@ -285,11 +285,19 @@ function grundeHtml(why) {
   return why.length ? `<ul class="gruende">${why.map((w) => `<li class="neutral">${w}</li>`).join('')}</ul>` : '';
 }
 
-function kaufKnoepfe(p, item) {
-  const fehlt = item.cost - p.gold;
+const ruf = (ctx) => ctx.state.shared.reputation || 0;
+// Preis mit Ruf, der aufgedruckte Preis steht dabei, wenn er abweicht
+function preisText(ctx, item) {
+  const preis = itemPrice(item, ruf(ctx));
+  return preis === item.cost ? `${item.cost} Gold` : `${preis} Gold (aufgedruckt ${item.cost})`;
+}
+
+function kaufKnoepfe(ctx, p, item) {
+  const preis = itemPrice(item, ruf(ctx));
+  const fehlt = preis - p.gold;
   return `${fehlt > 0
     ? `<span class="g-fehlt">Dir fehlen ${fehlt} Gold</span>`
-    : `<button type="button" class="haupt" data-act="item-kauf" data-id="${item.id}">Kaufen für ${item.cost} Gold</button>`}
+    : `<button type="button" class="haupt" data-act="item-kauf" data-id="${item.id}">Kaufen für ${preis} Gold</button>`}
     <button type="button" class="leise" data-act="item-hab" data-id="${item.id}">Habe ich schon</button>`;
 }
 
@@ -302,7 +310,15 @@ export function sucheHtml(ctx, q) {
   const num = /^\d+$/.test(text) ? Number(text) : null;
   const hits = data.items.filter((i) => (num != null ? i.id === num : i.name.toLowerCase().includes(text) || i.nameEn.toLowerCase().includes(text))).slice(0, 8);
   if (!hits.length) return `<p class="leer">Kein Gegenstand gefunden für „${esc(q)}“. Die Nummer steht unten auf der Karte.</p>`;
-  return hits.map((i) => gegenstandHtml(ctx, i, have.has(i.id) ? '<span class="g-fehlt">Hast du schon</span>' : kaufKnoepfe(p, i))).join('');
+  return hits.map((i) => gegenstandHtml(ctx, i, have.has(i.id) ? '<span class="g-fehlt">Hast du schon</span>' : kaufKnoepfe(ctx, p, i))).join('');
+}
+
+function rufText(r) {
+  const d = reputationPriceChange(r);
+  const naechste = Math.abs(r) < 3 ? 3 : Math.abs(r) >= 19 ? null : Math.floor((Math.abs(r) - 3) / 4) * 4 + 7;
+  const jetzt = d < 0 ? `Jeder Gegenstand kostet ${-d} Gold weniger.` : d > 0 ? `Jeder Gegenstand kostet ${d} Gold mehr.` : 'Bei diesem Ruf gelten die aufgedruckten Preise.';
+  const dann = naechste == null ? '' : r >= 0 ? ` Ab Ruf +${naechste} wird es ${d < 0 ? 'noch ' : ''}1 Gold billiger.` : ` Ab Ruf −${naechste} wird es ${d > 0 ? 'noch ' : ''}1 Gold teurer.`;
+  return `${jetzt}${dann} Verkauft wird immer zum halben aufgedruckten Preis.`;
 }
 
 function ausruestungHtml(ctx, p) {
@@ -322,10 +338,10 @@ function ausruestungHtml(ctx, p) {
   }).join('');
 
   const prosp = state.shared.prosperity || 1;
-  const laden = shopAdvice(ctx.data, profil, { gold: p.gold, prosperity: prosp, owned: p.items.map((e) => e.id), cn: ctx.condName, cards: ctx.pool() });
+  const laden = shopAdvice(ctx.data, profil, { gold: p.gold, prosperity: prosp, reputation: ruf(ctx), owned: p.items.map((e) => e.id), cn: ctx.condName, cards: ctx.pool() });
   const leistbar = laden.filter((x) => x.affordable).slice(0, 4);
   const sparen = laden.filter((x) => !x.affordable).slice(0, 3);
-  const zeile = (x) => gegenstandHtml(ctx, x.item, kaufKnoepfe(p, x.item),
+  const zeile = (x) => gegenstandHtml(ctx, x.item, kaufKnoepfe(ctx, p, x.item),
     `<p class="g-wert">Nutzen in Szenario ${ctx.local.scenario}: <b>${x.score.toFixed(1)}</b></p>${grundeHtml(x.why.map(esc))}`);
   const guide = GUIDES[p.classId];
   const guideListe = guide && guide.gegenstaende
@@ -349,6 +365,14 @@ function ausruestungHtml(ctx, p) {
       <h2>Was sich im Laden lohnt</h2>
       <span class="feldname">Wohlstandsstufe eurer Stadt</span>
       ${ctx.seg('prosperity', [1, 2, 3, 4, 5, 6, 7, 8, 9], prosp, 'Wohlstandsstufe')}
+      <p class="hinweis">Der Wohlstand bestimmt, welche Gegenstände es im Laden gibt.</p>
+      <span class="feldname">Ruf eurer Gruppe</span>
+      <div class="zaehler" role="group" aria-label="Ruf der Gruppe">
+        <button type="button" class="leise" data-act="ruf-minus" aria-label="Ruf um 1 senken" ${ruf(ctx) <= -20 ? 'disabled' : ''}>−</button>
+        <output aria-live="polite">${ruf(ctx) > 0 ? '+' : ruf(ctx) < 0 ? '−' : ''}${Math.abs(ruf(ctx))}</output>
+        <button type="button" class="leise" data-act="ruf-plus" aria-label="Ruf um 1 erhöhen" ${ruf(ctx) >= 20 ? 'disabled' : ''}>+</button>
+      </div>
+      <p class="hinweis">${rufText(ruf(ctx))}</p>
       <p class="hinweis">Bewertet für Szenario ${ctx.local.scenario} und deine Karten. Die Einordnung stammt aus dem Regeltext der Gegenstände und ist grob.</p>
       <h3 class="zwischen">Mit deinen ${p.gold} Gold bezahlbar</h3>
       <div class="g-liste">${leistbar.map(zeile).join('') || `<p class="leer">${p.gold ? 'Dafür reicht dein Gold gerade nicht.' : 'Trag unter „Übersicht“ dein Gold ein, dann siehst du hier, was du dir leisten kannst.'}</p>`}</div>
@@ -562,6 +586,12 @@ export function heldClick(ctx, b) {
     return fertig();
   }
   if (act === 'ep-bonus') { p.xp += Number(b.dataset.wert) || 0; p.xpGeschaetzt = false; return fertig(); }
+  if (act === 'ruf-plus' || act === 'ruf-minus') {
+    ctx.state.shared.reputation = Math.max(-20, Math.min(20, ruf(ctx) + (act === 'ruf-plus' ? 1 : -1)));
+    ctx.saveShared();
+    ctx.render();
+    return true;
+  }
   if (act === 'gold-plus' || act === 'gold-minus' || act === 'gold-setzen') {
     const n = zahl(ctx, 'goldWert');
     if (n == null || (n === 0 && act !== 'gold-setzen')) { ctx.setStatus('Bitte erst eine Zahl eintragen.', true); return true; }
@@ -577,8 +607,9 @@ export function heldClick(ctx, b) {
     if (act === 'item-kauf' || act === 'item-hab') {
       if (i >= 0) return true;
       if (act === 'item-kauf') {
-        if (p.gold < item.cost) { ctx.setStatus('Dafür reicht dein Gold nicht.', true); return true; }
-        p.gold -= item.cost;
+        const preis = itemPrice(item, ruf(ctx));
+        if (p.gold < preis) { ctx.setStatus('Dafür reicht dein Gold nicht.', true); return true; }
+        p.gold -= preis;
       }
       p.items.push({ id, worn: true });
     } else if (i >= 0) {

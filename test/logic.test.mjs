@@ -116,7 +116,7 @@ test('Zielreihenfolge stellt Bosse ans Ende', { skip: !withData }, () => {
 });
 
 // ---------- Szenariolänge, Initiative, Schaden ----------
-import { autoPlan, estimateRounds, calibration, initiativeOdds, incomingDamage, xpProgress, xpLevel, levelUpAdvice, enhancementCost, slotStickers, applyEnhancements, enhancementAdvice, scoreItem, shopAdvice } from '../public/logic.js';
+import { autoPlan, estimateRounds, calibration, initiativeOdds, incomingDamage, xpProgress, xpLevel, levelUpAdvice, enhancementCost, slotStickers, applyEnhancements, enhancementAdvice, scoreItem, shopAdvice, reputationPriceChange, itemPrice } from '../public/logic.js';
 
 const sunHand = (scenarioId) => {
   const sun = data.characters.find((c) => c.id === 'sun');
@@ -333,4 +333,22 @@ test('Jede Klasse hat ein Symbol, das nur aus Formen besteht', { skip: !withData
     assert.ok(tags.every((t) => ['g', 'path', 'circle', 'ellipse', 'rect', 'polygon', 'polyline'].includes(t)), `Unerwartetes Element im Symbol: ${c.id}`);
     assert.ok(!/\son\w+=|href|style=/.test(c.icon.body), `Unerwartetes Attribut im Symbol: ${c.id}`);
   }
+});
+
+test('Ruf verändert den Kaufpreis wie im Regelheft', () => {
+  const erwartet = { '-20': 5, '-19': 5, '-18': 4, '-15': 4, '-14': 3, '-11': 3, '-10': 2, '-7': 2, '-6': 1, '-3': 1, '-2': 0, 0: 0, 2: 0, 3: -1, 6: -1, 7: -2, 10: -2, 11: -3, 14: -3, 15: -4, 18: -4, 19: -5, 20: -5 };
+  for (const [ruf, delta] of Object.entries(erwartet)) assert.equal(reputationPriceChange(Number(ruf)), delta, `Ruf ${ruf}`);
+  assert.equal(itemPrice({ cost: 20 }, 7), 18);
+  assert.equal(itemPrice({ cost: 20 }, -12), 23);
+  assert.equal(itemPrice({ cost: 2 }, 20), 0);
+});
+
+test('Kaufliste rechnet mit dem Ruf', { skip: !withData }, () => {
+  const sun = data.characters.find((c) => c.id === 'sun');
+  const profil = scenarioProfile(data, data.scenarios.find((x) => x.id === 1), 4, 1);
+  const teuerster = Math.max(...data.items.filter((i) => i.prosperity === 1).map((i) => i.cost));
+  const knapp = shopAdvice(data, profil, { gold: teuerster - 1, prosperity: 1, cards: sun.cards.filter((c) => c.level === 1) });
+  const mitRuf = shopAdvice(data, profil, { gold: teuerster - 1, prosperity: 1, reputation: 3, cards: sun.cards.filter((c) => c.level === 1) });
+  assert.ok(knapp.some((x) => x.item.cost === teuerster && !x.affordable));
+  assert.ok(mitRuf.filter((x) => x.item.cost === teuerster).every((x) => x.affordable && x.price === teuerster - 1));
 });
