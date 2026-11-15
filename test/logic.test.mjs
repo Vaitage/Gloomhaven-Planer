@@ -480,3 +480,99 @@ test('Ein selbst erzeugtes Element zählt erst in der nächsten Runde', { skip: 
     }
   }
 });
+
+// Hilfen für die Tests der Eingaben vom Tisch
+function tischHand(level = 1, owned = []) {
+  const sun = data.characters.find((c) => c.id === 'sun');
+  const profile = scenarioProfile(data, data.scenarios.find((x) => x.id === 1), 4, 1);
+  const pool = cardPool(sun, level, owned);
+  const { hand } = suggestHand(pool, profile, sun.handSize);
+  return { profile, cards: pool.filter((c) => hand.includes(c.id)) };
+}
+const folge = (steps) => steps.map((s) => (s.type === 'round' ? `${s.n}:${s.top.card.id}/${s.bottom.card.id}` : s.type === 'rest' ? `rast:${s.lose.id}` : s.type));
+// Regelprüfung: keine Karte doppelt auf der Hand, verlorene Karten kommen nie wieder
+function regelkonform(plan, cards, weg = []) {
+  const fort = new Set(weg);
+  let offen = new Set(cards.map((c) => c.id));
+  let ablage = new Set();
+  for (const s of plan.steps) {
+    if (s.type === 'round') {
+      for (const x of [s.top, s.bottom]) {
+        assert.ok(offen.has(x.card.id), `Runde ${s.n}: ${x.card.name} ist nicht auf der Hand`);
+        offen.delete(x.card.id);
+        if (s.lost.includes(x.card.id)) fort.add(x.card.id); else ablage.add(x.card.id);
+      }
+      assert.notEqual(s.top.card.id, s.bottom.card.id);
+    } else if (s.type === 'rest') {
+      assert.ok(ablage.has(s.lose.id));
+      ablage.delete(s.lose.id); fort.add(s.lose.id);
+      for (const id of ablage) offen.add(id);
+      ablage = new Set();
+      assert.equal(s.handAfter, offen.size);
+    } else if (s.type === 'item') {
+      for (const c of s.cards) { assert.ok(ablage.has(c.id)); ablage.delete(c.id); offen.add(c.id); }
+    } else if (s.type === 'event' && s.kind === 'lose') {
+      assert.ok(offen.has(s.card.id) || ablage.has(s.card.id));
+      offen.delete(s.card.id); ablage.delete(s.card.id); fort.add(s.card.id);
+    }
+  }
+  return fort;
+}
+
+test('Eingabe „Karte verloren“: Plan davor bleibt, danach kommt die Karte nicht mehr vor', { skip: !withData }, () => {
+  const { profile, cards } = tischHand();
+  const basis = gamePlan(cards, profile, { losses: 1 });
+  regelkonform(basis, cards);
+  const runde3 = basis.steps.find((s) => s.type === 'round' && s.n === 3);
+  const opfer = runde3.pool.find((c) => !basis.steps.filter((s) => s.type === 'round' && s.n <= 3).some((s) => s.top.card.id === c.id || s.bottom.card.id === c.id));
+  assert.ok(opfer, 'nach Runde 3 liegt noch eine ungespielte Karte auf der Hand');
+  const plan = gamePlan(cards, profile, { losses: 1, events: [{ after: 3, type: 'lose', card: opfer.id }] });
+  assert.deepEqual(folge(plan.steps).slice(0, 3), folge(basis.steps).slice(0, 3));
+  assert.equal(plan.steps[3].type, 'event');
+  assert.equal(plan.steps[3].card.id, opfer.id);
+  for (const s of plan.steps.slice(4)) if (s.type === 'round') assert.ok(s.top.card.id !== opfer.id && s.bottom.card.id !== opfer.id);
+  regelkonform(plan, cards);
+  assert.ok(plan.rounds < basis.rounds);
+  // unbekannte Karte: nichts passiert
+  assert.deepEqual(folge(gamePlan(cards, profile, { losses: 1, events: [{ after: 3, type: 'lose', card: -5 }] }).steps), folge(basis.steps));
+});
+
+test('Eingabe „hier schon rasten“ zieht die Rast vor', { skip: !withData }, () => {
+  const { profile, cards } = tischHand();
+  const basis = gamePlan(cards, profile, { losses: 0 });
+  const plan = gamePlan(cards, profile, { losses: 0, events: [{ after: 2, type: 'rest' }] });
+  assert.deepEqual(folge(plan.steps).slice(0, 2), folge(basis.steps).slice(0, 2));
+  assert.equal(plan.steps[2].type, 'rest');
+  assert.equal(plan.steps[2].early, 0);
+  assert.equal(plan.steps[2].handAfter, cards.length - 1);
+  regelkonform(plan, cards);
+  // nach der ersten Runde liegen erst zwei Karten ab: Rast möglich. Vor Runde 1 nicht.
+  assert.equal(gamePlan(cards, profile, { losses: 0, events: [{ after: 0, type: 'rest' }] }).steps[0].type, 'round');
+});
+
+test('Eingabe „Element liegt aus“ versorgt die nächste Runde', { skip: !withData }, () => {
+  const { profile, cards } = tischHand();
+  const basis = gamePlan(cards, profile, { losses: 2 });
+  const hungrig = basis.steps.find((s) => s.type === 'round' && s.n >= 2 && s.hungry.length);
+  assert.ok(hungrig, 'im Plan fehlt nirgends ein Element');
+  const n = hungrig.n - 1;
+  const element = hungrig.hungry[0];
+  const plan = gamePlan(cards, profile, { losses: 2, events: [{ after: n, type: 'elements', elements: [element] }] });
+  assert.deepEqual(folge(plan.steps).slice(0, n), folge(basis.steps).slice(0, n));
+  const danach = plan.steps.filter((s) => s.type === 'round' && s.n === n + 1)[0];
+  assert.ok(danach.fed.includes(element));
+  assert.ok(!danach.hungry.includes(element));
+  regelkonform(plan, cards);
+});
+
+test('Mehrere Eingaben: frühere Planteile bleiben stehen, wenn eine spätere dazukommt', { skip: !withData }, () => {
+  const { profile, cards } = tischHand();
+  const eins = autoPlan(cards, profile, { target: 12, events: [{ after: 2, type: 'rest' }] });
+  assert.ok(eins.before >= eins.totalRounds);
+  const r5 = eins.steps.find((s) => s.type === 'round' && s.n === 5);
+  const zwei = autoPlan(cards, profile, { target: 12, events: [{ after: 2, type: 'rest' }, { after: 5, type: 'lose', card: r5.pool[0].id }] });
+  const bis5 = (p) => folge(p.steps.slice(0, p.steps.findIndex((s) => s.type === 'round' && s.n === 5) + 1));
+  assert.deepEqual(bis5(zwei), bis5(eins));
+  regelkonform(zwei, cards);
+  assert.equal(autoPlan(cards, profile, { target: 12 }).before, null);
+});

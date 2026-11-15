@@ -576,6 +576,9 @@ export function calibration(results) {
 // opts.longRest: lange Rasten (Karte frei wählbar, kostet eine Runde)
 // opts.tank: du willst die Angriffe auf dich ziehen
 // opts.restLosses: Karten-IDs, die bei den bisherigen Rasten tatsächlich verloren gingen (der Reihe nach)
+// opts.events: Eingaben vom Tisch, je { after: Runde, type: 'lose' | 'rest' | 'elements', card, elements }.
+//   Die Runden bis dahin bleiben, wie sie ohne die Eingabe wären, alles danach wird neu geplant.
+// opts.eventBudgets: je Eingabe, wie viele Verlustaktionen danach noch eingeplant werden dürfen
 // opts.staminaItems: getragene Ausdauertränke ({ id, name, n }), jeder holt einmal n abgeworfene Karten zurück
 export function gamePlan(cards, profile, opts = {}) {
   const cn = opts.conditionName;
@@ -604,61 +607,104 @@ export function gamePlan(cards, profile, opts = {}) {
   const potions = [...(opts.staminaItems || [])];
   const restLosses = opts.restLosses || [];
   let restIndex = 0;
-  let extra = false; // die Hand besteht gerade nur aus zurückgeholten Karten
 
-  for (let guard = 0; guard < 60 && hand.length >= 2; guard++) {
-    // Welche Verlustaktionen sind in diesem Zyklus freigegeben?
-    const enabled = new Set();
-    const candidates = lossHalves(hand).sort((a, b) => b.value - a.value);
-    let free = budget;
-    if (cycle === 0) for (const c of candidates.filter((x) => x.setup).slice(0, Math.min(2, free))) { enabled.add(c.key); free--; }
-    if (free > 0 && (target > 0 || hand.length <= 6)) {
-      const c = candidates.find((x) => !x.setup && !enabled.has(x.key) && (!held || x.key !== held.key || round >= target - 5));
-      if (c) enabled.add(c.key);
+  // Eingaben vom Tisch: nach Runde "after" ging eine Karte verloren, wurde gerastet oder liegt ein Element aus.
+  const events = (opts.events || []).map((e, index) => ({ ...e, index })).sort((a, b) => a.after - b.after || a.index - b.index);
+  const eventBudgets = opts.eventBudgets || [];
+  const due = () => events.some((e) => !e.done && e.after === round);
+  // Wendet alle Eingaben an, die nach der aktuellen Runde fällig sind. Liefert true, wenn gerastet werden soll.
+  const applyEvents = () => {
+    let rest = false;
+    for (const e of events) {
+      if (e.done || e.after !== round) continue;
+      e.done = true;
+      const reserve = target > 0 && round >= target;
+      if (e.type === 'lose') {
+        const card = [...hand, ...discard].find((c) => c.id === e.card);
+        if (card) {
+          hand = hand.filter((c) => c !== card);
+          discard = discard.filter((c) => c !== card);
+          steps.push({ type: 'event', kind: 'lose', index: e.index, n: round, card, reserve });
+        }
+      } else if (e.type === 'elements') {
+        carried = [...new Set([...carried, ...(e.elements || [])])];
+        steps.push({ type: 'event', kind: 'elements', index: e.index, n: round, elements: e.elements || [], reserve });
+      } else if (e.type === 'rest') rest = e;
+      // Ab hier dürfen nur noch so viele Verlustaktionen eingeplant werden, wie die Hand noch hergibt
+      if (eventBudgets[e.index] != null) budget = Math.min(budget, eventBudgets[e.index]);
     }
-    // Letzte Runde vor der Erschöpfung: Verlustaktionen kosten nichts mehr
-    const lastRound = hand.length === 2 && !extra;
-    if (lastRound) for (const c of candidates) enabled.add(c.key);
+    return rest;
+  };
 
-    const pairing = bestPairing(hand, val, enabled, basicAttack);
-    const ordered = orderRounds(pairing.pairs, carried);
-    carried = ordered.carried;
-    for (const p of ordered.rounds) {
-      round++;
-      const inis = [p.top.card.initiative, p.bottom.card.initiative].sort((a, b) => a - b);
-      const halves = [p.top.half, p.bottom.half];
-      const protect = halves.some((h) => (h.conditions || []).some((c) => ['stun', 'disarm', 'immobilize'].includes(c)) || h.heal || h.shield);
-      const waitForThem = !tank && !protect && halves.some(melee) && !halves.some((h) => h.move >= 3) && profile.rangedShare < 0.5;
-      const lead = waitForThem ? inis[1] : inis[0];
-      const leadWhy = tank ? 'früh gehen, damit du vorn stehst und bei Gleichstand das Ziel bist'
-        : waitForThem ? 'spät gehen und die Gegner herankommen lassen'
-          : protect ? 'früh gehen, damit Schutz und Kontrolle vor den Gegnern wirken' : 'früh gehen und zuerst zuschlagen';
-      const lostNow = [p.top, p.bottom].filter((x) => !x.basic && x.card[x.side].lost);
-      const finale = lastRound;
-      for (const x of lostNow) { if (!finale) budget--; lostPlayed.push(x.card.id); }
-      damage += p.top.dmg + p.bottom.dmg;
-      for (const x of [p.top, p.bottom]) if (!x.basic) xp += x.card[x.side].xp || 0;
-      steps.push({
-        type: 'round', n: round, cycle, value: round1(p.value), top: p.top, bottom: p.bottom,
-        lead, other: lead === inis[0] ? inis[1] : inis[0], leadWhy, beforeEnemies: lead < enemyInit,
-        odds: initiativeOdds(profile, lead),
-        notes: p.notes, fed: p.fed || [], hungry: p.hungry || [],
-        lost: lostNow.map((x) => x.card.id), finale, reserve: target > 0 && round > target,
-      });
-      const gone = new Set(lostNow.map((x) => x.card.id));
-      for (const c of [p.top.card, p.bottom.card]) if (!gone.has(c.id)) discard.push(c);
+  for (let guard = 0; guard < 80; guard++) {
+    let forced = applyEvents();
+    if (forced && discard.length < 2) forced = false;
+    if (!forced && hand.length >= 2) {
+      // Welche Verlustaktionen sind in diesem Zyklus freigegeben?
+      const enabled = new Set();
+      const candidates = lossHalves(hand).sort((a, b) => b.value - a.value);
+      let free = budget;
+      if (cycle === 0) for (const c of candidates.filter((x) => x.setup).slice(0, Math.min(2, free))) { enabled.add(c.key); free--; }
+      if (free > 0 && (target > 0 || hand.length <= 6)) {
+        const c = candidates.find((x) => !x.setup && !enabled.has(x.key) && (!held || x.key !== held.key || round >= target - 5));
+        if (c) enabled.add(c.key);
+      }
+      // Letzte Runde vor der Erschöpfung: Verlustaktionen kosten nichts mehr
+      const lastRound = hand.length === 2 && discard.length === 0;
+      if (lastRound) for (const c of candidates) enabled.add(c.key);
+
+      const pairing = bestPairing(hand, val, enabled, basicAttack);
+      const ordered = orderRounds(pairing.pairs, carried);
+      carried = ordered.carried;
+      let cut = false;
+      for (let k = 0; k < ordered.rounds.length; k++) {
+        const p = ordered.rounds[k];
+        round++;
+        const inis = [p.top.card.initiative, p.bottom.card.initiative].sort((a, b) => a - b);
+        const halves = [p.top.half, p.bottom.half];
+        const protect = halves.some((h) => (h.conditions || []).some((c) => ['stun', 'disarm', 'immobilize'].includes(c)) || h.heal || h.shield);
+        const waitForThem = !tank && !protect && halves.some(melee) && !halves.some((h) => h.move >= 3) && profile.rangedShare < 0.5;
+        const lead = waitForThem ? inis[1] : inis[0];
+        const leadWhy = tank ? 'früh gehen, damit du vorn stehst und bei Gleichstand das Ziel bist'
+          : waitForThem ? 'spät gehen und die Gegner herankommen lassen'
+            : protect ? 'früh gehen, damit Schutz und Kontrolle vor den Gegnern wirken' : 'früh gehen und zuerst zuschlagen';
+        const lostNow = [p.top, p.bottom].filter((x) => !x.basic && x.card[x.side].lost);
+        const finale = lastRound;
+        for (const x of lostNow) { if (!finale) budget--; lostPlayed.push(x.card.id); }
+        damage += p.top.dmg + p.bottom.dmg;
+        for (const x of [p.top, p.bottom]) if (!x.basic) xp += x.card[x.side].xp || 0;
+        const gone = new Set(lostNow.map((x) => x.card.id));
+        for (const c of [p.top.card, p.bottom.card]) if (!gone.has(c.id)) discard.push(c);
+        const later = ordered.rounds.slice(k + 1).flatMap((x) => [x.top.card, x.bottom.card]);
+        steps.push({
+          type: 'round', n: round, cycle, value: round1(p.value), top: p.top, bottom: p.bottom,
+          lead, other: lead === inis[0] ? inis[1] : inis[0], leadWhy, beforeEnemies: lead < enemyInit,
+          odds: initiativeOdds(profile, lead),
+          notes: p.notes, fed: p.fed || [], hungry: p.hungry || [],
+          lost: lostNow.map((x) => x.card.id), finale, reserve: target > 0 && round > target,
+          // was nach dieser Runde noch da ist: für Eingaben wie "Karte verloren" oder "hier rasten"
+          pool: [...pairing.left, ...later, ...discard], canRest: discard.length >= 2,
+        });
+        // Eine Eingabe nach dieser Runde: der Rest des Zyklus wird mit dem neuen Stand neu geplant
+        if (due() && k < ordered.rounds.length - 1) {
+          hand = [...pairing.left, ...later];
+          carried = [...p.gen];
+          cut = true;
+          break;
+        }
+      }
+      if (cut) continue;
+      hand = pairing.left;
+      if (due()) continue;
+      if (hand.length >= 2) continue;
     }
-    hand = pairing.left;
-    extra = false;
-    if (hand.length >= 2) continue;
     // Ausdauertrank: vor der Rast die stärksten abgeworfenen Karten zurückholen und noch einmal spielen
-    if (potions.length && discard.length >= 2) {
+    if (!forced && potions.length && discard.length >= 2) {
       const item = potions.shift();
       const back = [...discard].sort((a, b) => val[b.id].card - val[a.id].card).slice(0, Math.max(2, item.n || 2));
       discard = discard.filter((c) => !back.includes(c));
       hand = [...hand, ...back];
       steps.push({ type: 'item', n: round, item, cards: back, reserve: target > 0 && round >= target });
-      extra = true;
       continue;
     }
     if (discard.length < 2) break;
@@ -672,7 +718,7 @@ export function gamePlan(cards, profile, opts = {}) {
     hand = [...hand, ...discard];
     discard = [];
     if (longRest) round++;
-    steps.push({ type: 'rest', index: restIndex, long: longRest, n: longRest ? round : null, lose, suggest: worst, chosen: !!actual, options, handAfter: hand.length, reserve: target > 0 && round > target });
+    steps.push({ type: 'rest', index: restIndex, long: longRest, n: longRest ? round : null, lose, suggest: worst, chosen: !!actual, options, handAfter: hand.length, reserve: target > 0 && round > target, early: forced ? forced.index : null });
     restIndex++;
     cycle++;
     carried = [];
@@ -692,13 +738,32 @@ export function gamePlan(cards, profile, opts = {}) {
 export function autoPlan(cards, profile, opts = {}) {
   const target = opts.target || 0;
   const margin = opts.margin ?? 2;
+  const events = opts.events || [];
   let plan = null;
+  let losses = 0;
   for (let b = 6; b >= 0; b--) {
-    plan = gamePlan(cards, profile, { ...opts, losses: b });
+    plan = gamePlan(cards, profile, { ...opts, events: [], losses: b });
+    losses = b;
     if (plan.totalRounds >= target + margin) break;
+  }
+  const before = plan.totalRounds;
+  const beforeLosses = plan.lossesPlanned;
+  // Eingaben vom Tisch der Reihe nach: Der Plan bis zu einer Eingabe bleibt, wie er war. Danach
+  // werden nur so viele Verlustaktionen eingeplant, wie die Hand nach der Eingabe noch hergibt.
+  const eventBudgets = [];
+  const order = events.map((e, index) => ({ e, index })).sort((a, b) => a.e.after - b.e.after || a.index - b.index);
+  for (let k = 0; k < order.length; k++) {
+    const active = events.map((e, index) => (order.slice(0, k + 1).some((o) => o.index === index) ? e : { ...e, after: -1 }));
+    for (let b = k ? Math.min(...eventBudgets.filter((x) => x != null)) : losses; b >= 0; b--) {
+      eventBudgets[order[k].index] = b;
+      plan = gamePlan(cards, profile, { ...opts, events: active, eventBudgets, losses });
+      if (plan.totalRounds >= target + margin) break;
+    }
   }
   plan.auto = true;
   plan.enough = plan.totalRounds >= target;
+  plan.before = events.length ? before : null;
+  plan.beforeLosses = events.length ? beforeLosses : null;
   return plan;
 }
 

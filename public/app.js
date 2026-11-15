@@ -21,6 +21,8 @@ const local = {
   showRooms: false,
   poolFilter: 'vorrat',
   losses: 2,
+  planEvents: [],
+  planOffen: null,
   longRest: false,
   heldTab: 'uebersicht',
   itemSuche: '',
@@ -491,7 +493,14 @@ function stepHtml(s, einsatz = []) {
   if (s.type === 'item') {
     return `<li class="rast trank ${s.reserve ? 'reserve' : ''}"><p><b>${esc(s.item.name)}</b> trinken: hol <b>${s.cards.map((c) => esc(c.name)).join('</b> und <b>')}</b> zurück auf die Hand.</p><p class="hinweis">Das bringt eine Runde mehr, bevor du rasten musst.</p></li>`;
   }
+  if (s.type === 'event') {
+    const text = s.kind === 'lose'
+      ? `Nach Runde ${s.n}: <b>${esc(s.card.name)}</b> (${s.card.initiative}) verloren. Der Plan ab hier rechnet ohne diese Karte.`
+      : `Nach Runde ${s.n} ${s.elements.length === 1 ? 'liegt' : 'liegen'} <b>${s.elements.map((e) => esc(elemName(e))).join('</b> und <b>')}</b> aus. Der Plan nutzt das in der nächsten Runde, wenn eine Karte es braucht.`;
+    return `<li class="rast gewaehlt ${s.reserve ? 'reserve' : ''}"><p>${text}</p><button type="button" class="text-knopf" data-act="tisch-weg" data-i="${s.index}">Eingabe entfernen</button></li>`;
+  }
   if (s.type === 'rest') {
+    const frueh = s.early != null ? `<p><b>Vorgezogene Rast</b>, von dir eingetragen. <button type="button" class="text-knopf" data-act="tisch-weg" data-i="${s.early}">Eingabe entfernen</button></p>` : '';
     const what = s.chosen
       ? `${s.long ? `Lange Rast${s.n ? ` in Runde ${s.n}` : ''}` : 'Kurze Rast'}: verloren ist <b>${esc(s.lose.name)}</b>. Der Plan ab hier rechnet ohne diese Karte.`
       : s.long
@@ -499,7 +508,7 @@ function stepHtml(s, einsatz = []) {
         : `Kurze Rast: die verlorene Karte ist Zufall. Am wenigsten weh tut <b>${esc(s.lose.name)}</b>. Trifft es eine wichtige Karte, lohnt sich oft 1 Schaden für einen neuen Zufall.`;
     const wahl = [...s.options].sort((a, b) => a.name.localeCompare(b.name, 'de'))
       .map((c) => `<option value="${c.id}" ${c.id === s.lose.id ? 'selected' : ''}>${esc(c.name)} (${c.initiative})${c.id === s.suggest.id ? ', Vorschlag' : ''}</option>`).join('');
-    return `<li class="rast ${s.reserve ? 'reserve' : ''} ${s.chosen ? 'gewaehlt' : ''}"><p>${what}</p>
+    return `<li class="rast ${s.reserve ? 'reserve' : ''} ${s.chosen || s.early != null ? 'gewaehlt' : ''}">${frueh}<p>${what}</p>
       <label class="rast-wahl" for="rast-${s.index}">${s.long ? 'Andere Karte abgegeben?' : 'Welche Karte hat es getroffen?'}
         <select id="rast-${s.index}" class="auswahl" data-rast="${s.index}">${wahl}</select></label>
       <p class="hinweis">Danach ${s.handAfter} Karten auf der Hand.${s.chosen ? '' : ' Wählst du eine andere Karte, wird der Plan ab hier neu gerechnet.'}</p></li>`;
@@ -510,7 +519,7 @@ function stepHtml(s, einsatz = []) {
   if (s.lost.length) notes.push(s.finale ? 'Letzte Runde: Verlustaktionen kosten jetzt nichts mehr.' : 'Verlustaktion eingeplant. Nur spielen, wenn sie hier wirklich viel bewirkt.');
   const odds = s.odds.slice(0, 3).map((o) => `${esc(o.name)} in ${o.before} von ${o.of} Fällen`).join(', ');
   return `
-    <li class="runde ${s.reserve ? 'reserve' : ''}">
+    <li class="runde ${s.reserve ? 'reserve' : ''}" data-runde="${s.n}">
       <div class="runde-kopf"><span class="runde-nr">Runde ${s.n}</span><span class="runde-ini">Initiative ${s.lead}</span></div>
       ${actionHtml(s.top, 'oben')}
       ${actionHtml(s.bottom, 'unten')}
@@ -518,7 +527,47 @@ function stepHtml(s, einsatz = []) {
       ${odds ? `<p class="quote">Damit bist du dran vor: ${odds}.</p>` : ''}
       ${notes.length ? `<ul class="gruende">${notes.map((n) => `<li class="neutral">${esc(n)}</li>`).join('')}</ul>` : ''}
       ${einsatz.map((x) => `<p class="einsatz"><span class="marke gut">Gegenstand</span> <b>${esc(x.item.name)}</b>: ${esc(x.why)}</p>`).join('')}
+      <button type="button" class="text-knopf" data-act="tisch-offen" data-n="${s.n}" aria-expanded="${local.planOffen === s.n}">${local.planOffen === s.n ? 'Schließen' : 'Nach dieser Runde ist etwas passiert'}</button>
+      ${local.planOffen === s.n ? tischHtml(s) : ''}
     </li>`;
+}
+
+// Eingaben vom Tisch nach einer Runde: Karte verloren, früher rasten, Element liegt aus
+const ELEMENTE = ['fire', 'ice', 'air', 'earth', 'light', 'dark'];
+function tischHtml(s) {
+  const karten = [...s.pool].sort((a, b) => a.name.localeCompare(b.name, 'de'))
+    .map((c) => `<option value="${c.id}">${esc(c.name)} (${c.initiative})</option>`).join('');
+  const liegt = new Set((local.planEvents || []).filter((e) => e.type === 'elements' && e.after === s.n).flatMap((e) => e.elements));
+  return `<div class="tisch">
+      <label class="rast-wahl" for="tisch-karte">Karte verloren, zum Beispiel um Schaden abzuwehren
+        <select id="tisch-karte" class="auswahl">${karten}</select></label>
+      <div class="knopfreihe">
+        <button type="button" class="leise" data-act="tisch-karte" data-n="${s.n}" ${karten ? '' : 'disabled'}>Karte als verloren eintragen</button>
+        <button type="button" class="leise" data-act="tisch-rast" data-n="${s.n}" ${s.canRest ? '' : 'disabled'}>Jetzt schon rasten</button>
+      </div>
+      <span class="feldname">Element liegt aus, zum Beispiel durch eine Angriffskarte</span>
+      <div class="elemente">${ELEMENTE.map((e) => `<button type="button" class="leise" data-act="tisch-element" data-n="${s.n}" data-el="${e}" aria-pressed="${liegt.has(e)}">${esc(elemName(e))}</button>`).join('')}</div>
+      <p class="hinweis">Die Runden bis hier bleiben stehen, alles danach wird neu gerechnet.</p>
+    </div>`;
+}
+
+// Eine neue Eingabe nach Runde n: alles, was später eingetragen war, hängt davon ab und verfällt
+function planSchnitt(n) {
+  local.planEvents = local.planEvents.filter((e) => e.after <= n);
+  const steps = local.planLetzter ? local.planLetzter.steps : [];
+  const at = steps.findIndex((s) => s.type === 'round' && s.n === n);
+  const rasten = steps.slice(0, at + 1).filter((s) => s.type === 'rest').length;
+  local.rastVerlust = (local.rastVerlust || []).slice(0, rasten);
+}
+
+// Neu zeichnen, ohne dass die Stelle unter dem Finger wegspringt
+function renderKeep(selector) {
+  const li = (el) => (el ? el.closest('li') || el : null);
+  const alt = selector ? li(view.querySelector(selector)) : null;
+  const oben = alt ? alt.getBoundingClientRect().top : null;
+  render();
+  const neu = selector ? li(view.querySelector(selector)) : null;
+  if (neu && oben != null) window.scrollBy(0, neu.getBoundingClientRect().top - oben);
 }
 
 function renderPlan() {
@@ -541,9 +590,12 @@ function renderPlan() {
   const traenke = getragen.filter((i) => i.tags && i.tags.stamina && i.use === 'consumed').map((i) => ({ id: i.id, name: i.name, n: i.tags.stamina }));
   // Tatsächlich verlorene Karten gelten nur für genau diese Hand in diesem Szenario
   const rastKey = `${local.profile}|${local.scenario}|${local.longRest}|${cards.map((c) => c.id).sort().join(',')}`;
-  if (local.rastKey !== rastKey) { local.rastKey = rastKey; local.rastVerlust = []; }
-  const plan = autoPlan(cards, p, { target, longRest: local.longRest, tank: !!profile().tank, conditionName: condName, staminaItems: traenke, restLosses: local.rastVerlust });
-  const rastGewaehlt = plan.steps.some((s) => s.type === 'rest' && s.chosen);
+  if (local.rastKey !== rastKey) { local.rastKey = rastKey; local.rastVerlust = []; local.planEvents = []; local.planOffen = null; }
+  const plan = autoPlan(cards, p, { target, longRest: local.longRest, tank: !!profile().tank, conditionName: condName, staminaItems: traenke, restLosses: local.rastVerlust, events: local.planEvents });
+  local.planLetzter = plan;
+  const rastGewaehlt = plan.steps.some((s) => s.type === 'rest' && s.chosen) || local.planEvents.length > 0;
+  const gespart = plan.beforeLosses != null ? plan.beforeLosses - plan.lossesPlanned : 0;
+  const kosten = plan.before == null ? '' : ` Deine Hand hält damit ${plan.before === plan.totalRounds ? `weiter ${plan.totalRounds}` : `${plan.totalRounds} statt ${plan.before}`} Runden${gespart > 0 ? `, weil der Plan dafür ${gespart === 1 ? 'eine Verlustaktion' : `${gespart} Verlustaktionen`} weniger einplant` : ''}.`;
   const einsatz = itemPlan(plan, getragen, p, { elementName: elemName, longRest: local.longRest });
   // In der Rundenliste stehen Gegenstände, die an eine bestimmte Karte gebunden sind. Tränke haben ihren eigenen Schritt.
   const jeRunde = (n) => einsatz.filter((x) => x.round === n && !(x.item.tags || {}).stamina && /^Runde \d+/.test(x.when));
@@ -599,7 +651,7 @@ function renderPlan() {
     </section>
     <section>
       <h2>Runde für Runde</h2>
-      ${rastGewaehlt ? '<p class="hinweis">Der Plan rechnet mit den Karten, die du bei den Rasten als verloren eingetragen hast. <button type="button" class="text-knopf" data-act="rast-zurueck">Zurück zum Vorschlag</button></p>' : ''}
+      ${rastGewaehlt ? `<p class="hinweis">Der Plan rechnet mit dem, was du vom Tisch eingetragen hast.${kosten} <button type="button" class="text-knopf" data-act="rast-zurueck">Zurück zum Vorschlag</button></p>` : ''}
       <ol class="plan">${schritte}</ol>
       <div class="knopfreihe"><button type="button" class="leise" data-go="notizen">Szenario abschließen</button></div>
     </section>`;
@@ -831,7 +883,32 @@ view.addEventListener('click', (e) => {
   }
   if (act === 'leeren') { profile().hands[handKey()] = []; saveProfile(); return render(); }
   if (act === 'ziel-reset') { delete local.targets[local.scenario]; return render(); }
-  if (act === 'rast-zurueck') { local.rastVerlust = []; return render(); }
+  if (act === 'rast-zurueck') { local.rastVerlust = []; local.planEvents = []; local.planOffen = null; return render(); }
+  if (act === 'tisch-offen') { const n = Number(b.dataset.n); local.planOffen = local.planOffen === n ? null : n; return renderKeep(`[data-runde="${n}"]`); }
+  if (act === 'tisch-karte' || act === 'tisch-rast' || act === 'tisch-element') {
+    const n = Number(b.dataset.n);
+    if (act === 'tisch-element') {
+      // Element an- oder abwählen, spätere Eingaben bleiben nur bei gleicher Runde erhalten
+      const el = b.dataset.el;
+      const da = local.planEvents.find((e) => e.type === 'elements' && e.after === n);
+      planSchnitt(n);
+      if (da) {
+        da.elements = da.elements.includes(el) ? da.elements.filter((x) => x !== el) : [...da.elements, el];
+        if (!da.elements.length) local.planEvents = local.planEvents.filter((e) => e !== da);
+      } else local.planEvents.push({ after: n, type: 'elements', elements: [el] });
+    } else {
+      planSchnitt(n);
+      if (act === 'tisch-karte') local.planEvents.push({ after: n, type: 'lose', card: Number($('#tisch-karte').value) });
+      else local.planEvents.push({ after: n, type: 'rest' });
+      local.planOffen = null;
+    }
+    return renderKeep(`[data-runde="${n}"]`);
+  }
+  if (act === 'tisch-weg') {
+    const e = local.planEvents[Number(b.dataset.i)];
+    if (e) { planSchnitt(e.after); local.planEvents = local.planEvents.filter((x) => x !== e); }
+    return renderKeep(e ? `[data-runde="${e.after}"]` : null);
+  }
   if (act === 'zum-held') { local.tab = 'held'; local.heldTab = b.dataset.held; render(); return window.scrollTo(0, 0); }
   if (act === 'erg' || act === 'erg-weg') {
     const results = (state.shared.results ||= {});
@@ -884,12 +961,14 @@ view.addEventListener('change', (e) => {
   if (e.target.dataset.rast != null) {
     // Spätere Rasten hängen von dieser ab, ihre Auswahl verfällt
     const i = Number(e.target.dataset.rast);
+    const wert = Number(e.target.value);
+    const steps = local.planLetzter ? local.planLetzter.steps : [];
+    const at = steps.findIndex((s) => s.type === 'rest' && s.index === i);
+    const davor = steps.slice(0, Math.max(0, at)).filter((s) => s.type === 'round').length;
+    local.planEvents = local.planEvents.filter((x) => x.after <= davor);
     local.rastVerlust = (local.rastVerlust || []).slice(0, i);
-    local.rastVerlust[i] = Number(e.target.value);
-    const oben = e.target.closest('li').getBoundingClientRect().top;
-    render();
-    const neu = document.getElementById(`rast-${i}`);
-    if (neu) window.scrollBy(0, neu.closest('li').getBoundingClientRect().top - oben);
+    local.rastVerlust[i] = wert;
+    renderKeep(`#rast-${i}`);
   }
 });
 view.addEventListener('input', (e) => {

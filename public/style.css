@@ -494,3 +494,12 @@ main { overflow-wrap: anywhere; }
 .rast-wahl { display: grid; gap: 4px; margin: 8px 0 6px; font-size: .9rem; color: var(--pergament-leise); }
 .rast.gewaehlt { border-style: solid; border-color: var(--klasse); }
 .text-knopf { background: none; border: 0; padding: 10px 0; min-height: 44px; color: var(--klasse); text-decoration: underline; font: inherit; }
+
+/* Eingaben vom Tisch im Plan */
+.tisch { margin-top: 6px; padding: 12px; border-radius: 8px; background: var(--tiefe); border: 1px solid var(--schiefer-hell); display: grid; gap: 8px; }
+.tisch .knopfreihe { margin-top: 0; }
+.tisch .rast-wahl { margin: 0; }
+.elemente { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.elemente button { min-height: 44px; padding: 6px 4px; }
+.elemente button[aria-pressed="true"] { background: var(--klasse); border-color: var(--klasse); color: var(--tinte); font-weight: 600; }
+@media (min-width: 640px) { .elemente { grid-template-columns: repeat(6, 1fr); } }
