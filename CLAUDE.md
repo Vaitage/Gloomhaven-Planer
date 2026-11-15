@@ -50,6 +50,6 @@ Gegenstände kommen aus `items.json` von GHS. Der Kaufpreis läuft immer über `
 - Gruppenansicht über alle Spieler: vom Nutzer nicht gewünscht.
 - Vorteil, Nachteil, Segen und Fluch im Angriffsdeck.
 - Verbesserungsfelder von Beschwörungen.
-- Gedruckte deutsche Kartennamen der Sonnenhüterin eintragen, sobald der Nutzer Fotos schickt.
+- Gedruckte deutsche Kartennamen der Sonnenhüterin: 19 von 30 eingetragen (vom Nutzer abgetippt). Es fehlen 190, 191, 194, 196, 197 und 199 bis 204.
 - Deutsche Kartentexte für die anderen freischaltbaren Klassen von Hand nachtragen.
 - Schriften lokal ausliefern statt über Google Fonts.

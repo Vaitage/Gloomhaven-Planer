@@ -1,36 +1,86 @@
 {
   "_hinweis": "Eigene deutsche Übersetzungen für Texte, die Gloomhaven Secretariat nur englisch enthält. Aufbau wie die Label-Dateien von GHS. Unter 'ability' stehen Kartennamen (englischer Name -> gedruckter deutscher Name), unter 'custom' die Sondertexte. Inoffiziell übersetzt, Wortlaut kann von den gedruckten Karten abweichen.",
   "ability": {
-    "Amputate": "Amputation"
+    "Amputate": "Amputation",
+    "Purifying Aura": "Läuternde Aura",
+    "Cautious Advance": "Bedachter Vormarsch",
+    "Brilliant Prayer": "Gebet der Erleuchtung",
+    "Empowering Command": "Ermutigender Befehl",
+    "Protective Blessing": "Schutzsegen",
+    "Dazzling Charge": "Blendender Vorstoß",
+    "Tactical Order": "Taktischer Befehl",
+    "Holy Strike": "Heiliger Angriff",
+    "Hammer Blow": "Hammerschlag",
+    "Defensive Stance": "Defensive Haltung",
+    "Lay on Hands": "Handauflegen",
+    "Daybreak": "Morgengrauen",
+    "Beacon of Light": "Leuchtfeuer",
+    "Glorious Bolt": "Gleißender Pfeil",
+    "Practical Plans": "Praktische Pläne",
+    "Mobilizing Axiom": "Mobilmachung",
+    "Righteous Strength": "Rechtschaffene Stärke",
+    "Path of Glory": "Ruhmreicher Pfad",
+    "Illuminate the Target": "Glühendes Ziel"
   },
   "custom": {
     "gh": {
       "sun": {
         "abilities": {
-          "175": { "1": "Bei den nächsten fünf Nahkampfangriffen, die dich zum Ziel haben, erhältst du %game.action.retaliate:2%" },
-          "177": { "1": "Ein angrenzender Verbündeter darf eine seiner verlorenen Karten zurückerhalten." },
+          "175": {
+            "1": "Bei den nächsten fünf Nahkampfangriffen, die dich zum Ziel haben, erhältst du %game.action.retaliate:2%"
+          },
+          "177": {
+            "1": "Ein angrenzender Verbündeter darf eine seiner verlorenen Karten zurückerhalten."
+          },
           "178": {
             "1": "Ein angrenzender Verbündeter darf bis zu zwei seiner abgelegten Karten zurückerhalten.",
             "2": "Stattdessen bis zu drei abgelegte Karten, %game.card.experience:1%.",
             "3": "Ein angrenzender Verbündeter darf ausführen:"
           },
-          "179": { "1": "Du und alle angrenzenden Verbündeten erleiden in dieser Runde keinen Schaden." },
-          "181": { "1": "Ein Verbündeter in %game.action.range:3% darf ausführen:" },
-          "184": { "1": "Ziehe von all deinen Bewegungen 1 ab." },
-          "185": { "1": "Heile allen Schaden bei einem angrenzenden Verbündeten.", "2": "Erleide %game.damage:3%." },
-          "187": { "1": "Am Ende deiner nächsten fünf Züge, in denen %game.element.light% nicht stark ist: erzeuge %game.element.light%" },
-          "190": { "1": "Ein angrenzender Verbündeter darf sofort einen zusätzlichen Zug ausführen, indem er zwei Karten aus seiner Hand spielt." },
-          "191": { "1": "Erhalte %game.card.experience:1% für jeden anvisierten Gegner." },
-          "192": { "1": "Alle Verbündeten in %game.action.range:5% dürfen ausführen:" },
-          "194": { "1": "Alle Angriffe gegen dich oder Verbündete in %game.action.range:4% um dich erhalten in dieser Runde Nachteil." },
-          "195": { "1": "Betrifft alle Verbündeten, durch die du dich bewegst" },
-          "196": { "1": "Ziehe von all deinen Angriffen 1 ab." },
+          "179": {
+            "1": "Du und alle angrenzenden Verbündeten erleiden in dieser Runde keinen Schaden."
+          },
+          "181": {
+            "1": "Ein Verbündeter in %game.action.range:3% darf ausführen:"
+          },
+          "184": {
+            "1": "Ziehe von all deinen Bewegungen 1 ab."
+          },
+          "185": {
+            "1": "Heile allen Schaden bei einem angrenzenden Verbündeten.",
+            "2": "Erleide %game.damage:3%."
+          },
+          "187": {
+            "1": "Am Ende deiner nächsten fünf Züge, in denen %game.element.light% nicht stark ist: erzeuge %game.element.light%"
+          },
+          "190": {
+            "1": "Ein angrenzender Verbündeter darf sofort einen zusätzlichen Zug ausführen, indem er zwei Karten aus seiner Hand spielt."
+          },
+          "191": {
+            "1": "Erhalte %game.card.experience:1% für jeden anvisierten Gegner."
+          },
+          "192": {
+            "1": "Alle Verbündeten in %game.action.range:5% dürfen ausführen:"
+          },
+          "194": {
+            "1": "Alle Angriffe gegen dich oder Verbündete in %game.action.range:4% um dich erhalten in dieser Runde Nachteil."
+          },
+          "195": {
+            "1": "Betrifft alle Verbündeten, durch die du dich bewegst"
+          },
+          "196": {
+            "1": "Ziehe von all deinen Angriffen 1 ab."
+          },
           "197": {
             "1": "Alle Verbündeten addieren in dieser Runde +1 auf all ihre Angriffe.",
             "2": "Alle Verbündeten addieren in dieser Runde +2 auf all ihre Bewegungen."
           },
-          "198": { "1": "Ein angrenzender Verbündeter darf ausführen:" },
-          "199": { "1": "Bei jeder deiner Angriffsaktionen darfst du %game.element.consume.light%, um +2 Angriff, %game.custom.advantage% und %game.card.experience:1% zu erhalten" },
+          "198": {
+            "1": "Ein angrenzender Verbündeter darf ausführen:"
+          },
+          "199": {
+            "1": "Bei jeder deiner Angriffsaktionen darfst du %game.element.consume.light%, um +2 Angriff, %game.custom.advantage% und %game.card.experience:1% zu erhalten"
+          },
           "200": {
             "1": "Ein angrenzender Verbündeter darf eine seiner verlorenen Karten zurückerhalten.",
             "2": "Stattdessen bis zu zwei verlorene Karten"
@@ -41,8 +91,12 @@
             "3": "Alle Verbündeten in %game.action.range:3% dürfen ausführen:",
             "4": "Erhalte %game.card.experience:1% für jeden ausgeführten Angriff."
           },
-          "203": { "1": "Bei deinen nächsten vier Angriffsaktionen: +3 Angriff, %game.condition.wound% und %game.custom.advantage%." },
-          "204": { "1": "Wenn ein Verbündeter Schaden erleidet, darfst du stattdessen diesen Schaden, um 1 verringert, selbst erleiden." }
+          "203": {
+            "1": "Bei deinen nächsten vier Angriffsaktionen: +3 Angriff, %game.condition.wound% und %game.custom.advantage%."
+          },
+          "204": {
+            "1": "Wenn ein Verbündeter Schaden erleidet, darfst du stattdessen diesen Schaden, um 1 verringert, selbst erleiden."
+          }
         }
       }
     }

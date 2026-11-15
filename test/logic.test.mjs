@@ -639,3 +639,13 @@ test('Kurze und lange Rast lassen sich je Rast wählen', { skip: !withData }, ()
   assert.equal(frueh.steps[3].n, 4);
   regelkonform(frueh, cards);
 });
+
+test('Gedruckte deutsche Kartennamen der Sonnenhüterin', { skip: !withData }, () => {
+  const sun = data.characters.find((c) => c.id === 'sun');
+  const name = (id) => sun.cards.find((c) => c.id === id).name;
+  assert.equal(name(183), 'Hammerschlag');
+  assert.equal(name(198), 'Glühendes Ziel');
+  assert.equal(name(175), 'Läuternde Aura');
+  assert.equal(sun.cards.find((c) => c.id === 183).nameEn, 'Hammer Blow');
+  assert.equal(sun.cards.filter((c) => c.name !== c.nameEn).length, 19);
+});

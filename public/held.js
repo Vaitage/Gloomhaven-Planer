@@ -416,7 +416,10 @@ function aufstiegHtml(ctx, p, c) {
   const rat = aufstiegMerker.rat;
   const pr = xpProgress(p.xp, p.level);
   const guide = GUIDES[p.classId];
-  const tipp = guide && guide.aufstieg ? guide.aufstieg[rat.next] : null;
+  const roh = guide && guide.aufstieg ? guide.aufstieg[rat.next] : null;
+  // Kartennamen im Guide-Text deutsch und mit Initiative zeigen
+  const klassenKarten = ctx.data.characters.find((x) => x.id === p.classId).cards;
+  const tipp = roh ? { ...roh, grund: mitInitiative(roh.grund || '', klassenKarten), alt: roh.alt ? mitInitiative(roh.alt, klassenKarten) : roh.alt } : null;
   const guideWahl = tipp ? rat.candidates.find((x) => x.card.nameEn === tipp.karte) : null;
   const rechnung = rat.best;
   const empfohlen = guideWahl || rechnung;
@@ -478,13 +481,13 @@ function aufstiegHtml(ctx, p, c) {
 
 // ---------- Verbesserungen ----------
 
-// Hängt in einem Guide-Text an jeden Kartennamen die Initiative an, z. B. „Skewer (35)“
+// Ersetzt in einem Guide-Text jeden Kartennamen durch den deutschen Namen mit Initiative, z. B. „Hammerschlag (55)“
 export function mitInitiative(text, cards) {
   const namen = new Map();
-  for (const c of cards) for (const n of [c.name, c.nameEn]) if (n) namen.set(n, c.initiative);
+  for (const c of cards) for (const n of [c.name, c.nameEn]) if (n) namen.set(n, c);
   const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const muster = [...namen.keys()].sort((a, b) => b.length - a.length).map(esc).join('|');
-  return muster ? text.replace(new RegExp(`(${muster})(?! \\()`, 'g'), (n) => `${n} (${namen.get(n)})`) : text;
+  return muster ? text.replace(new RegExp(`(${muster})(?! \\()`, 'g'), (n) => `${namen.get(n).name} (${namen.get(n).initiative})`) : text;
 }
 
 function verbessernHtml(ctx, p) {
