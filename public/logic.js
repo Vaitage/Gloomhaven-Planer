@@ -567,6 +567,7 @@ export function calibration(results) {
 // opts.target: geschätzte Szenariolänge. Ist sie bekannt, kommen Verlustaktionen früh.
 // opts.longRest: lange Rasten (Karte frei wählbar, kostet eine Runde)
 // opts.tank: du willst die Angriffe auf dich ziehen
+// opts.staminaItems: getragene Ausdauertränke ({ id, name, n }), jeder holt einmal n abgeworfene Karten zurück
 export function gamePlan(cards, profile, opts = {}) {
   const cn = opts.conditionName;
   let budget = opts.losses ?? 2;
@@ -591,6 +592,8 @@ export function gamePlan(cards, profile, opts = {}) {
   let damage = 0;
   let xp = 0;
   const lostPlayed = [];
+  const potions = [...(opts.staminaItems || [])];
+  let extra = false; // die Hand besteht gerade nur aus zurückgeholten Karten
 
   for (let guard = 0; guard < 60 && hand.length >= 2; guard++) {
     // Welche Verlustaktionen sind in diesem Zyklus freigegeben?
@@ -603,7 +606,8 @@ export function gamePlan(cards, profile, opts = {}) {
       if (c) enabled.add(c.key);
     }
     // Letzte Runde vor der Erschöpfung: Verlustaktionen kosten nichts mehr
-    if (hand.length === 2) for (const c of candidates) enabled.add(c.key);
+    const lastRound = hand.length === 2 && !extra;
+    if (lastRound) for (const c of candidates) enabled.add(c.key);
 
     const pairing = bestPairing(hand, val, enabled, basicAttack);
     const ordered = orderRounds(pairing.pairs, carried);
@@ -619,7 +623,7 @@ export function gamePlan(cards, profile, opts = {}) {
         : waitForThem ? 'spät gehen und die Gegner herankommen lassen'
           : protect ? 'früh gehen, damit Schutz und Kontrolle vor den Gegnern wirken' : 'früh gehen und zuerst zuschlagen';
       const lostNow = [p.top, p.bottom].filter((x) => !x.basic && x.card[x.side].lost);
-      const finale = hand.length === 2;
+      const finale = lastRound;
       for (const x of lostNow) { if (!finale) budget--; lostPlayed.push(x.card.id); }
       damage += p.top.dmg + p.bottom.dmg;
       for (const x of [p.top, p.bottom]) if (!x.basic) xp += x.card[x.side].xp || 0;
@@ -634,7 +638,18 @@ export function gamePlan(cards, profile, opts = {}) {
       for (const c of [p.top.card, p.bottom.card]) if (!gone.has(c.id)) discard.push(c);
     }
     hand = pairing.left;
+    extra = false;
     if (hand.length >= 2) continue;
+    // Ausdauertrank: vor der Rast die stärksten abgeworfenen Karten zurückholen und noch einmal spielen
+    if (potions.length && discard.length >= 2) {
+      const item = potions.shift();
+      const back = [...discard].sort((a, b) => val[b.id].card - val[a.id].card).slice(0, Math.max(2, item.n || 2));
+      discard = discard.filter((c) => !back.includes(c));
+      hand = [...hand, ...back];
+      steps.push({ type: 'item', n: round, item, cards: back, reserve: target > 0 && round >= target });
+      extra = true;
+      continue;
+    }
     if (discard.length < 2) break;
     // Rasten: die Karte abgeben, die für dieses Szenario am wenigsten bringt
     const worst = discard.reduce((b, c) => (val[c.id].card < val[b.id].card ? c : b), discard[0]);
@@ -651,7 +666,7 @@ export function gamePlan(cards, profile, opts = {}) {
   const rounds = steps.filter((s) => s.type === 'round').length;
   return {
     steps, rounds, totalRounds: round, damage: Math.round(damage), share: Math.round(profile.hpTotal / profile.players),
-    enemyInit, killOrder: killOrder(profile), lossesPlanned: lostPlayed.length, xp,
+    enemyInit, killOrder: killOrder(profile), lossesPlanned: lostPlayed.length, xp, itemsUsed: steps.filter((s) => s.type === 'item').length,
     target, spare: target ? round - target : null,
   };
 }
@@ -669,6 +684,85 @@ export function autoPlan(cards, profile, opts = {}) {
   plan.auto = true;
   plan.enough = plan.totalRounds >= target;
   return plan;
+}
+
+// ---------- Gegenstände im Plan ----------
+
+// Schlägt für jeden getragenen Gegenstand vor, wann er im Plan am meisten bringt.
+// Liefert je Gegenstand { item, round, when, why }. round ist die Planrunde oder null.
+export function itemPlan(plan, items, profile, opts = {}) {
+  const en = opts.elementName || ((e) => e);
+  const all = plan.steps.filter((s) => s.type === 'round');
+  const rounds = all.some((s) => !s.reserve) ? all.filter((s) => !s.reserve) : all;
+  const again = (item) => (item.use === 'spent' && opts.longRest ? ' Nach jeder langen Rast wieder einsetzbar.' : '');
+  return (items || []).map((item) => {
+    const t = item.tags || {};
+    const out = (round, when, why) => ({ item, round, when, why: why + again(item) });
+    if (t.stamina) {
+      const step = plan.steps.find((s) => s.type === 'item' && s.item.id === item.id);
+      if (!step) return out(null, 'Kurz bevor du rasten müsstest', 'Holt abgeworfene Karten zurück: eine Runde mehr.');
+      return out(step.n, `Nach Runde ${step.n}, bevor du rastest`, `Hol ${step.cards.map((c) => c.name).join(' und ')} zurück: eine Runde mehr, mit deinen stärksten Karten.`);
+    }
+    if (item.use === 'passive') return out(null, 'Wirkt dauerhaft', 'Nichts zu tun.');
+    if (t.attack || t.pierce || t.advantage || (t.inflict || []).length || (t.selfBuff || []).includes('strengthen')) {
+      let best = null;
+      for (const s of rounds) for (const x of [s.top, s.bottom]) {
+        if (!(x.dmg > 0) || !x.half.attacks.length) continue;
+        if (t.needs && (t.needs === 'ranged') !== !!x.half.ranged) continue;
+        if (!best || x.dmg > best.x.dmg) best = { s, x };
+      }
+      const grund = t.pierce && profile.shieldShare >= 0.25 ? 'Gegen den Schild der Gegner, auf deinem stärksten Angriff.'
+        : (t.inflict || []).length ? 'Auf einen Angriff legen, der sicher trifft und ein wichtiges Ziel hat.'
+          : 'Auf deinem stärksten Angriff bringt der Bonus am meisten.';
+      if (!best) return out(null, 'Bei deinem stärksten Angriff', t.needs ? `Wirkt nur im ${t.needs === 'ranged' ? 'Fernkampf' : 'Nahkampf'}, dafür ist im Plan kein Angriff vorgesehen.` : grund);
+      return out(best.s.n, `Runde ${best.s.n}, zusammen mit ${best.x.card.name}`, grund);
+    }
+    if (t.element) {
+      const s = rounds.find((r) => r.hungry.length && (t.element === 'wild' || r.hungry.includes(t.element)));
+      if (s) return out(s.n, `Runde ${s.n}`, `Liefert ${s.hungry.map(en).join(', ')} für den Bonus deiner Karten, den sonst ein Mitspieler vorbereiten müsste.`);
+      return out(null, 'Wenn ein Bonus ein Element braucht', 'Im Plan versorgst du dich selbst, heb ihn für Mitspieler oder eine Planänderung auf.');
+    }
+    if (t.initiative) {
+      let best = null;
+      for (const s of rounds) {
+        const o = s.odds[0];
+        if (!o || !o.of) continue;
+        const d = Math.abs(o.before / o.of - 0.5);
+        if (!best || d < best.d) best = { s, d };
+      }
+      return best ? out(best.s.n, `Runde ${best.s.n}`, 'Hier ist es am knappsten, ob du vor den Gegnern dran bist.')
+        : out(null, 'Wenn die Initiative knapp wird', 'Damit bist du gezielt vor oder nach den Gegnern dran.');
+    }
+    if (t.shield || t.noDamage || t.attackerDisadvantage || t.retaliate) {
+      const s = rounds.find((r) => [r.top, r.bottom].some((x) => x.half.attacks.length && !x.half.ranged));
+      const ab = s ? `Ab Runde ${s.n}, sobald du vorn stehst` : 'Sobald du angegriffen wirst';
+      if (t.noDamage) return out(s ? s.n : null, ab, profile.bosses ? 'Für den schwersten Treffer aufheben, am besten für den Boss.' : 'Für den schwersten Einzeltreffer aufheben, nicht für Kleinkram.');
+      if (t.shield) return out(s ? s.n : null, ab, `Zählt nur für die nächsten ${t.charges > 1 ? `${t.charges} Treffer` : 'Angriffe dieser Runde'}: einschalten, wenn mehrere Gegner auf dich gehen.`);
+      return out(s ? s.n : null, ab, 'Einschalten, wenn mehrere Gegner auf dich gehen.');
+    }
+    if (t.move || t.jump) return out(rounds.length ? rounds[0].n : null, 'Runde 1 oder beim Wechsel in den nächsten Raum', t.jump ? 'Über Hindernisse und Gegner hinweg früh in Position kommen.' : 'Früh in Position kommen spart später eine ganze Bewegung.');
+    if (t.heal) {
+      const gift = (profile.inflicts.poison || 0) + (profile.inflicts.wound || 0) >= 0.2;
+      return out(null, `Sobald dir ${t.heal} oder mehr Leben fehlen`, gift ? 'Hier sofort bei Gift oder Wunde trinken, die Heilung entfernt beides.' : 'Nicht bis zum letzten Leben warten, sonst kostet dich der nächste Treffer eine Karte.');
+    }
+    if (t.cure) return out(null, 'Sobald dich ein Zustand einen Zug kosten würde', 'Betäubung, Entwaffnen und Festhalten sind die teuren.');
+    if (t.refresh) return out(null, 'Nachdem deine anderen Gegenstände verbraucht sind', 'Frischt sie wieder auf.');
+    return out(null, 'Nach eigenem Ermessen', 'Sondereffekt, den die App nicht einordnen kann.');
+  });
+}
+
+// ---------- Nach dem Szenario ----------
+
+export const COIN_VALUE = [2, 2, 3, 3, 4, 4, 5, 6]; // Gold je Münze nach Szenariostufe
+
+// Was ein Szenario einbringt. EP von Karten und Münzen behältst du auch bei einer Niederlage,
+// den Szenario-Bonus (4 + 2 × Stufe) und Kampfziel-Haken gibt es nur bei einem Sieg.
+export function scenarioReward({ level = 1, won = true, cardXp = 0, coins = 0, goal = 0 } = {}) {
+  const n = (x, max) => Math.max(0, Math.min(max, Math.round(Number(x) || 0)));
+  const lvl = n(level, 7);
+  const bonus = won ? 4 + 2 * lvl : 0;
+  const coinValue = COIN_VALUE[lvl];
+  return { xp: n(cardXp, 99) + bonus, bonus, gold: n(coins, 99) * coinValue, coinValue, checks: won ? n(goal, 2) : 0 };
 }
 
 // ---------- Was bei dir ankommt ----------

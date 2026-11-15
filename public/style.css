@@ -464,3 +464,20 @@ main { overflow-wrap: anywhere; }
 .held-text strong, .held-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-ep { max-width: 100%; }
 @media (max-width: 380px) { .held-zeichen { width: 32px; height: 32px; } .status { max-width: 36%; font-size: .8rem; } }
+
+/* Gegenstände im Plan */
+.einsaetze { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 10px; }
+.einsaetze li { display: grid; gap: 2px; padding: 10px 12px; background: var(--schiefer); border-radius: 8px; border-left: 3px solid var(--klasse); }
+.einsaetze .wann { color: var(--klasse); font-weight: 500; }
+.einsaetze .hinweis { margin: 0; }
+.einsatz { margin: 8px 0 0; font-size: .95rem; }
+.rast.trank { border-style: solid; border-color: var(--moos); }
+@media (min-width: 900px) { .einsaetze { grid-template-columns: 1fr 1fr; } }
+
+/* Szenario abschließen */
+.abschluss { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0 0; }
+.abschluss label { display: grid; gap: 4px; font-size: .9rem; color: var(--pergament-leise); min-width: 0; }
+.abschluss input, .abschluss select { width: 100%; min-height: 48px; font-size: 1.05rem; }
+@media (max-width: 380px) { .abschluss { grid-template-columns: 1fr; } }
+.abschluss input { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--schiefer-hell); background: var(--schiefer); color: var(--pergament); font-size: 16px; font-variant-numeric: tabular-nums; }
+.knopfreihe + .gut-text { margin-top: 14px; }

@@ -1,6 +1,6 @@
 // Charakterbildschirm: Erfahrung, Gold, Ausrüstung, Stufenaufstieg und Verbesserungen.
 // Bekommt alles Nötige über "ctx" von app.js, damit hier kein eigener Zustand lebt.
-import { xpProgress, XP_LEVELS, levelUpAdvice, shopAdvice, itemPrice, reputationPriceChange, scoreItem, attackFit, slotStickers, enhancementCost, enhancementAdvice, buildDeck, deckStats, perkAdvice, guidePerk, perksAllowed } from './logic.js';
+import { xpProgress, XP_LEVELS, levelUpAdvice, shopAdvice, itemPrice, COIN_VALUE, reputationPriceChange, scoreItem, attackFit, slotStickers, enhancementCost, enhancementAdvice, buildDeck, deckStats, perkAdvice, guidePerk, perksAllowed } from './logic.js';
 import { GUIDES } from './tipps.js';
 
 const SLOT_NAMEN = { head: 'Kopf', body: 'Körper', onehand: 'Eine Hand', twohand: 'Zwei Hände', legs: 'Beine', small: 'Kleiner Gegenstand' };
@@ -11,7 +11,7 @@ const ZEILEN_NAMEN = {
   target: 'Ziel', pierce: 'Durchbohren', push: 'Schieben', pull: 'Ziehen', condition: 'Zustand', area: 'Fläche', element: 'Element', loot: 'Beute',
 };
 const FORM_NAMEN = { square: 'Quadrat', circle: 'Kreis', diamond: 'Raute', diamond_plus: 'Raute mit Plus', hex: 'Sechseck' };
-const MUENZWERT = [2, 2, 3, 3, 4, 4, 5, 6]; // Gold je Münze nach Szenariostufe
+const MUENZWERT = COIN_VALUE; // Gold je Münze nach Szenariostufe
 const HELD_REITER = [['uebersicht', 'Übersicht'], ['ausruestung', 'Ausrüstung'], ['aufstieg', 'Aufstieg'], ['deck', 'Angriffsdeck'], ['verbessern', 'Verbessern']];
 
 // Ergänzt fehlende Felder bei Profilen, die vor dem Charakterbildschirm angelegt wurden.

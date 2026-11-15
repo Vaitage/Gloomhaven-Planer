@@ -116,7 +116,7 @@ test('Zielreihenfolge stellt Bosse ans Ende', { skip: !withData }, () => {
 });
 
 // ---------- Szenariolänge, Initiative, Schaden ----------
-import { autoPlan, estimateRounds, calibration, initiativeOdds, incomingDamage, xpProgress, xpLevel, levelUpAdvice, enhancementCost, slotStickers, applyEnhancements, enhancementAdvice, scoreItem, shopAdvice, reputationPriceChange, itemPrice } from '../public/logic.js';
+import { autoPlan, estimateRounds, calibration, initiativeOdds, incomingDamage, xpProgress, xpLevel, levelUpAdvice, enhancementCost, slotStickers, applyEnhancements, enhancementAdvice, scoreItem, shopAdvice, reputationPriceChange, itemPrice, itemPlan, scenarioReward } from '../public/logic.js';
 
 const sunHand = (scenarioId) => {
   const sun = data.characters.find((c) => c.id === 'sun');
@@ -351,4 +351,61 @@ test('Kaufliste rechnet mit dem Ruf', { skip: !withData }, () => {
   const mitRuf = shopAdvice(data, profil, { gold: teuerster - 1, prosperity: 1, reputation: 3, cards: sun.cards.filter((c) => c.level === 1) });
   assert.ok(knapp.some((x) => x.item.cost === teuerster && !x.affordable));
   assert.ok(mitRuf.filter((x) => x.item.cost === teuerster).every((x) => x.affordable && x.price === teuerster - 1));
+});
+
+test('Ausdauertrank bringt im Plan eine Runde mehr und holt nur abgeworfene Karten zurück', { skip: !withData }, () => {
+  const sun = data.characters.find((c) => c.id === 'sun');
+  const profile = scenarioProfile(data, data.scenarios.find((x) => x.id === 1), 4, 1);
+  const pool = cardPool(sun, 1, []);
+  const { hand } = suggestHand(pool, profile, sun.handSize);
+  const cards = pool.filter((c) => hand.includes(c.id));
+  const trank = data.items.find((i) => i.id === 13);
+  const ohne = gamePlan(cards, profile, { losses: 0 });
+  const mit = gamePlan(cards, profile, { losses: 0, staminaItems: [{ id: 13, name: trank.name, n: trank.tags.stamina }] });
+  assert.equal(mit.rounds, ohne.rounds + 1);
+  assert.equal(mit.itemsUsed, 1);
+  // die zurückgeholten Karten wurden im selben Zyklus schon gespielt und kommen direkt danach wieder dran
+  const at = mit.steps.findIndex((s) => s.type === 'item');
+  const vorher = new Set(mit.steps.slice(0, at).filter((s) => s.type === 'round').flatMap((s) => [s.top.card.id, s.bottom.card.id]));
+  const step = mit.steps[at];
+  assert.equal(step.cards.length, 2);
+  for (const c of step.cards) assert.ok(vorher.has(c.id));
+  const danach = mit.steps[at + 1];
+  assert.equal(danach.type, 'round');
+  assert.equal(danach.finale, false);
+  for (const x of [danach.top, danach.bottom]) assert.ok(step.cards.some((c) => c.id === x.card.id));
+  // ohne Freigabe weiterhin keine Verlustaktion
+  for (const s of mit.steps.filter((x) => x.type === 'round')) for (const x of [s.top, s.bottom]) assert.ok(x.basic || !x.card[x.side].lost || s.finale);
+});
+
+test('Jeder getragene Gegenstand bekommt einen Einsatzvorschlag', { skip: !withData }, () => {
+  const sun = data.characters.find((c) => c.id === 'sun');
+  const profile = scenarioProfile(data, data.scenarios.find((x) => x.id === 1), 4, 1);
+  const pool = cardPool(sun, 1, []);
+  const { hand } = suggestHand(pool, profile, sun.handSize);
+  const cards = pool.filter((c) => hand.includes(c.id));
+  const items = data.items.filter((i) => i.prosperity >= 1 && i.prosperity <= 9);
+  const trank = data.items.find((i) => i.id === 13);
+  const plan = gamePlan(cards, profile, { losses: 1, target: 12, staminaItems: [{ id: 13, name: trank.name, n: 2 }] });
+  const vorschlag = itemPlan(plan, items, profile);
+  assert.equal(vorschlag.length, items.length);
+  const runden = new Set(plan.steps.filter((s) => s.type === 'round').map((s) => s.n));
+  for (const v of vorschlag) {
+    assert.ok(v.when && v.why, `Begründung fehlt: ${v.item.nameEn}`);
+    assert.ok(v.round == null || runden.has(v.round), `Runde gibt es nicht: ${v.item.nameEn}`);
+  }
+  assert.match(vorschlag.find((v) => v.item.id === 13).when, /^Nach Runde \d+/);
+  // ein Angriffsbonus landet auf einer Runde mit Angriff
+  const bonus = vorschlag.find((v) => v.item.tags.attack && v.item.use !== 'passive' && v.round != null);
+  const runde = plan.steps.find((s) => s.type === 'round' && s.n === bonus.round);
+  assert.ok([runde.top, runde.bottom].some((x) => x.dmg > 0));
+});
+
+test('Abschluss rechnet EP, Gold und Haken wie im Regelheft', () => {
+  assert.deepEqual(scenarioReward({ level: 2, won: true, cardXp: 9, coins: 4, goal: 1 }), { xp: 17, bonus: 8, gold: 12, coinValue: 3, checks: 1 });
+  // Niederlage: Karten-EP und Gold bleiben, Bonus und Haken nicht
+  assert.deepEqual(scenarioReward({ level: 2, won: false, cardXp: 9, coins: 4, goal: 2 }), { xp: 9, bonus: 0, gold: 12, coinValue: 3, checks: 0 });
+  assert.equal(scenarioReward({ level: 0, won: true }).xp, 4);
+  assert.equal(scenarioReward({ level: 7, won: true, coins: 1 }).gold, 6);
+  assert.equal(scenarioReward({ level: 1, cardXp: -3, coins: 'x', goal: 5 }).checks, 2);
 });

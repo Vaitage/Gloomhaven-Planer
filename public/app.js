@@ -1,4 +1,4 @@
-import { scenarioProfile, cardPool, scoreCard, suggestHand, handStats, stamina, autoPlan, estimateRounds, calibration, incomingDamage, xpProgress, applyEnhancements } from './logic.js';
+import { scenarioProfile, cardPool, scoreCard, suggestHand, handStats, stamina, autoPlan, itemPlan, scenarioReward, perksAllowed, estimateRounds, calibration, incomingDamage, xpProgress, applyEnhancements } from './logic.js';
 import { renderHeld, heldClick, heldInput, heldChange, heldDefaults, stickerName } from './held.js';
 import { renderSetup, setupStart, setupClick, setupInput, setupFarbe } from './setup.js';
 
@@ -487,7 +487,10 @@ function actionHtml(x, where) {
   return `<p class="zug"><span class="haelfte-name">${where}</span><span><b>${esc(x.card.name)}</b> <span class="zug-ini">${x.card.initiative}</span><br>${text}${loss}</span></p>`;
 }
 
-function stepHtml(s) {
+function stepHtml(s, einsatz = []) {
+  if (s.type === 'item') {
+    return `<li class="rast trank ${s.reserve ? 'reserve' : ''}"><p><b>${esc(s.item.name)}</b> trinken: hol <b>${s.cards.map((c) => esc(c.name)).join('</b> und <b>')}</b> zurück auf die Hand.</p><p class="hinweis">Das bringt eine Runde mehr, bevor du rasten musst.</p></li>`;
+  }
   if (s.type === 'rest') {
     const what = s.long
       ? `Lange Rast${s.n ? ` in Runde ${s.n}` : ''}: gib <b>${esc(s.lose.name)}</b> ab, heile 2 und frische Gegenstände auf.`
@@ -508,6 +511,7 @@ function stepHtml(s) {
       <p class="hinweis">Führe mit der ${s.lead}: ${esc(s.leadWhy)}.${s.other !== s.lead ? ` Alternative: ${s.other}.` : ''}</p>
       ${odds ? `<p class="quote">Damit bist du dran vor: ${odds}.</p>` : ''}
       ${notes.length ? `<ul class="gruende">${notes.map((n) => `<li class="neutral">${esc(n)}</li>`).join('')}</ul>` : ''}
+      ${einsatz.map((x) => `<p class="einsatz"><span class="marke gut">Gegenstand</span> <b>${esc(x.item.name)}</b>: ${esc(x.why)}</p>`).join('')}
     </li>`;
 }
 
@@ -527,16 +531,21 @@ function renderPlan() {
   const est = estimateRounds(p, sz, cal.factor);
   const eigen = local.targets[sz.id] != null;
   const target = eigen ? local.targets[sz.id] : est.rounds;
-  const plan = autoPlan(cards, p, { target, longRest: local.longRest, tank: !!profile().tank, conditionName: condName });
+  const getragen = (profile().items || []).filter((e) => e.worn).map((e) => data.items.find((i) => i.id === e.id)).filter(Boolean);
+  const traenke = getragen.filter((i) => i.tags && i.tags.stamina && i.use === 'consumed').map((i) => ({ id: i.id, name: i.name, n: i.tags.stamina }));
+  const plan = autoPlan(cards, p, { target, longRest: local.longRest, tank: !!profile().tank, conditionName: condName, staminaItems: traenke });
+  const einsatz = itemPlan(plan, getragen, p, { elementName: elemName, longRest: local.longRest });
+  // In der Rundenliste stehen Gegenstände, die an eine bestimmte Karte gebunden sind. Tränke haben ihren eigenen Schritt.
+  const jeRunde = (n) => einsatz.filter((x) => x.round === n && !(x.item.tags || {}).stamina && /^Runde \d+/.test(x.when));
   const typ = { normal: 'normal', elite: 'Elite', boss: 'Boss' };
   const urteil = !plan.enough
     ? `Deine Hand reicht auch ohne Verlustaktionen nur für ${plan.totalRounds} Runden. Für ${target} Runden brauchst du einen Ausdauertrank oder die Mitspieler müssen das Ende tragen.`
-    : `Eingeplant ${plan.lossesPlanned === 1 ? 'ist 1 Verlustaktion' : `sind ${plan.lossesPlanned} Verlustaktionen`}. Damit hält deine Hand ${plan.totalRounds} Runden, das ${plan.spare === 1 ? 'ist 1 Runde' : `sind ${plan.spare} Runden`} Reserve.`;
+    : `Eingeplant ${plan.lossesPlanned === 1 ? 'ist 1 Verlustaktion' : `sind ${plan.lossesPlanned} Verlustaktionen`}${plan.itemsUsed ? ` und ${plan.itemsUsed === 1 ? 'dein Ausdauertrank' : `${plan.itemsUsed} Ausdauertränke`}` : ''}. Damit hält deine Hand ${plan.totalRounds} Runden, das ${plan.spare === 1 ? 'ist 1 Runde' : `sind ${plan.spare} Runden`} Reserve.`;
   let trenner = false;
   const schritte = plan.steps.map((s) => {
     const first = s.reserve && !trenner;
     if (first) trenner = true;
-    return (first ? '<li class="trenner">Ab hier Reserve, falls das Szenario länger dauert als geschätzt.</li>' : '') + stepHtml(s);
+    return (first ? '<li class="trenner">Ab hier Reserve, falls das Szenario länger dauert als geschätzt.</li>' : '') + stepHtml(s, s.type === 'round' ? jeRunde(s.n) : []);
   }).join('');
   const inits = p.groups.map((g) => {
     const d = p.deckTraits[g.id];
@@ -573,12 +582,21 @@ function renderPlan() {
       <p class="hinweis">Fokus-Regel: Ein Monster greift an, wen es mit der wenigsten Bewegung erreicht. Bei Gleichstand den Näheren, danach den mit der früheren Initiative. Wer Angriffe auf sich ziehen will, steht vorn und geht früh.</p>
     </section>` : ''}
     <section>
+      <h2>Deine Gegenstände im Plan</h2>
+      ${einsatz.length ? `<ul class="einsaetze">${einsatz.map((x) => `<li><b>${esc(x.item.name)}</b><span class="wann">${esc(x.when)}</span><span class="hinweis">${esc(x.why)}</span></li>`).join('')}</ul>`
+    : '<p class="leer">Du trägst keine Gegenstände. Trag sie im Charakterbildschirm unter „Ausrüstung“ ein, dann plant die App sie mit ein.</p>'}
+      <p class="hinweis">Gerechnet wird mit den Gegenständen, die du unter „Ausrüstung“ als getragen markiert hast.</p>
+    </section>
+    <section>
       <h2>Runde für Runde</h2>
       <ol class="plan">${schritte}</ol>
+      <div class="knopfreihe"><button type="button" class="leise" data-go="notizen">Szenario abschließen</button></div>
     </section>`;
 }
 
 // ---------- Reiter: Notizen ----------
+
+const perksGenommen = (p) => (((p.perks || {})[p.classId]) || []).reduce((n, x) => n + (x || 0), 0);
 
 function renderNotes() {
   const s = scenario();
@@ -586,28 +604,47 @@ function renderNotes() {
   const others = Object.entries(notes).filter(([id, t]) => t && Number(id) !== s.id).sort((a, b) => a[0] - b[0]);
   const res = (state.shared.results || {})[s.id];
   const cal = calibration(state.shared.results);
+  const pr = profile();
+  if (pr) heldDefaults(pr);
+  const lvl = state.shared.level;
+  const meins = res && pr ? (res.rewards || {})[local.profile] : null;
   view.innerHTML = `
     ${scenarioBar()}
+    <section>
+      <h2>Szenario abschließen</h2>
+      ${pr ? `<p class="hinweis">Für ${esc(local.profile)}, Szenariostufe ${lvl}: ein Sieg bringt ${4 + 2 * lvl} EP Bonus, jede Münze ist ${scenarioReward({ level: lvl }).coinValue} Gold wert.</p>` : ''}
+      <div class="abschluss">
+        <label for="ergRunden">Gespielte Runden
+          <input id="ergRunden" type="number" inputmode="numeric" enterkeyhint="done" min="1" max="60" placeholder="z. B. 14" value="${res ? res.rounds : ''}"></label>
+        ${pr ? `<label for="ergEp">EP von deinen Karten
+          <input id="ergEp" type="number" inputmode="numeric" enterkeyhint="done" min="0" max="99" placeholder="0" value="${meins ? meins.cardXp : ''}"></label>
+        <label for="ergMuenzen">Eingesammelte Münzen
+          <input id="ergMuenzen" type="number" inputmode="numeric" enterkeyhint="done" min="0" max="99" placeholder="0" value="${meins ? meins.coins : ''}"></label>
+        <label for="ergZiel">Kampfziel
+          <select id="ergZiel" class="auswahl">
+            <option value="0" ${!meins || !meins.goal ? 'selected' : ''}>nicht geschafft</option>
+            <option value="1" ${meins && meins.goal === 1 ? 'selected' : ''}>geschafft: 1 Haken</option>
+            <option value="2" ${meins && meins.goal === 2 ? 'selected' : ''}>geschafft: 2 Haken</option>
+          </select></label>` : ''}
+      </div>
+      <div class="knopfreihe">
+        <button type="button" class="haupt" data-act="erg" data-won="1">${meins ? 'Als Sieg neu eintragen' : 'Sieg eintragen'}</button>
+        <button type="button" class="leise" data-act="erg" data-won="0">${meins ? 'Als Niederlage neu eintragen' : 'Niederlage eintragen'}</button>
+        ${res ? '<button type="button" class="leise" data-act="erg-weg">Eintrag löschen</button>' : ''}
+      </div>
+      ${res ? `<p class="gut-text">Eingetragen: ${res.rounds} Runden, ${res.won ? 'gewonnen' : 'verloren'}.${meins ? ` ${esc(local.profile)} hat dafür ${meins.xp} EP, ${meins.gold} Gold und ${meins.checks === 1 ? '1 Haken' : `${meins.checks} Haken`} bekommen.` : ''}</p>` : ''}
+      ${meins && pr ? `<div class="knopfreihe">
+        ${xpProgress(pr.xp, pr.level).ready ? '<button type="button" class="haupt" data-act="zum-held" data-held="aufstieg">Stufenaufstieg: Karte wählen</button>' : ''}
+        ${perksAllowed(pr.level, pr.checks) > perksGenommen(pr) ? '<button type="button" class="leise" data-act="zum-held" data-held="deck">Ein Perk ist frei</button>' : ''}
+      </div>` : ''}
+      <p class="hinweis">${pr ? 'EP und Gold behältst du auch bei einer Niederlage, den Bonus und die Haken gibt es nur beim Sieg. Trägst du neu ein, wird der alte Eintrag vorher zurückgerechnet. ' : ''}Aus gewonnenen Partien lernt die App, wie lange eure Szenarien wirklich dauern, und plant die Verlustkarten danach.${cal.n ? ` Bisher ${cal.n} Partien: ihr braucht ${Math.round(cal.factor * 100)} % der geschätzten Runden.` : ''}</p>
+    </section>
     <section>
       <h2>Notiz zu diesem Szenario</h2>
       <label><span class="sr">Notiz</span>
         <textarea id="notiz" rows="8" placeholder="Was hat funktioniert, was nicht? Beim nächsten Versuch seht ihr es hier wieder.">${esc(notes[s.id] || '')}</textarea>
       </label>
       <p class="hinweis">${OHNE_SERVER ? 'Notizen bleiben auf diesem Gerät.' : 'Notizen gelten für die ganze Gruppe und liegen auf eurem Server.'}</p>
-    </section>
-    <section>
-      <h2>Wie lief es?</h2>
-      <div class="rechner">
-        <label for="ergRunden">Gespielte Runden</label>
-        <input id="ergRunden" type="number" inputmode="numeric" enterkeyhint="done" min="1" max="60" placeholder="Runden" value="${res ? res.rounds : ''}">
-      </div>
-      <div class="knopfreihe">
-        <button type="button" class="haupt" data-act="erg" data-won="1">Gewonnen eintragen</button>
-        <button type="button" class="leise" data-act="erg" data-won="0">Verloren eintragen</button>
-        ${res ? '<button type="button" class="leise" data-act="erg-weg">Eintrag löschen</button>' : ''}
-      </div>
-      ${res ? `<p class="gut-text">Eingetragen: ${res.rounds} Runden, ${res.won ? 'gewonnen' : 'verloren'}.</p>` : ''}
-      <p class="hinweis">Aus gewonnenen Partien lernt die App, wie lange eure Szenarien wirklich dauern, und plant die Verlustkarten danach.${cal.n ? ` Bisher ${cal.n} Partien: ihr braucht ${Math.round(cal.factor * 100)} % der geschätzten Runden.` : ''}</p>
     </section>
     ${others.length ? `<section><h2>Weitere Notizen</h2>${others.map(([id, t]) => `<article class="notiz"><button type="button" class="leise" data-act="szen" data-id="${id}">Szenario ${id}</button><p>${esc(t)}</p></article>`).join('')}</section>` : ''}
     ${updatesHtml()}`;
@@ -783,15 +820,42 @@ view.addEventListener('click', (e) => {
   }
   if (act === 'leeren') { profile().hands[handKey()] = []; saveProfile(); return render(); }
   if (act === 'ziel-reset') { delete local.targets[local.scenario]; return render(); }
+  if (act === 'zum-held') { local.tab = 'held'; local.heldTab = b.dataset.held; render(); return window.scrollTo(0, 0); }
   if (act === 'erg' || act === 'erg-weg') {
     const results = (state.shared.results ||= {});
-    if (act === 'erg-weg') delete results[local.scenario];
+    const alt = results[local.scenario];
+    const pr = profile();
+    if (pr) heldDefaults(pr);
+    // Einen früheren Eintrag dieses Helden zurückrechnen, damit nichts doppelt gutgeschrieben wird
+    const zurueck = () => {
+      const r = alt && pr ? (alt.rewards || {})[local.profile] : null;
+      if (!r) return;
+      pr.xp = Math.max(0, pr.xp - r.xp);
+      pr.gold = Math.max(0, pr.gold - r.gold);
+      pr.checks = Math.max(0, pr.checks - r.checks);
+    };
+    if (act === 'erg-weg') { zurueck(); delete results[local.scenario]; }
     else {
       const rounds = Math.round(Number($('#ergRunden').value));
       if (!(rounds > 0)) return setStatus('Bitte erst die Rundenzahl eintragen.', true);
       const p = currentProfile();
-      results[local.scenario] = { rounds, won: b.dataset.won === '1', est: estimateRounds(p, scenario()).base, players: p.players, level: p.level };
+      const won = b.dataset.won === '1';
+      const rewards = { ...((alt && alt.rewards) || {}) };
+      if (pr) {
+        zurueck();
+        const cardXp = Math.max(0, Math.round(Number($('#ergEp').value) || 0));
+        const coins = Math.max(0, Math.round(Number($('#ergMuenzen').value) || 0));
+        const goal = Number($('#ergZiel').value) || 0;
+        const r = scenarioReward({ level: state.shared.level, won, cardXp, coins, goal });
+        const checks = Math.min(18, pr.checks + r.checks) - pr.checks;
+        pr.xp += r.xp; pr.gold += r.gold; pr.checks += checks;
+        local.epAlt = null;
+        rewards[local.profile] = { xp: r.xp, gold: r.gold, checks, cardXp, coins, goal: won ? goal : 0 };
+        setStatus(`${r.xp} EP und ${r.gold} Gold gutgeschrieben.`);
+      }
+      results[local.scenario] = { rounds, won, est: estimateRounds(p, scenario()).base, players: p.players, level: p.level, rewards };
     }
+    if (pr) saveProfile();
     saveShared();
     return render();
   }

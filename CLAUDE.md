@@ -28,7 +28,10 @@ Einmalig nötig: Settings → Pages → Source „GitHub Actions“ (oder `gh ap
 App und Dienst sprechen nur über `data/update/anfrage` (schreibt die App: `pruefen` oder `aktualisieren`) und `data/update/status.json` (schreibt `tools/pi/selbst-aktualisieren.sh`). Der Ablauf des Dienstes wurde mit nachgestelltem Git-Remote und Docker getestet (Erfolg, fehlgeschlagener Build mit Rückfall, ungültige Anfrage), auf einem echten Pi noch nicht.
 
 ## Spielplan
-`gamePlan()` in `public/logic.js` spielt die Hand durch: pro Rastzyklus die wertvollste Paarung der Handkarten (exakt über Teilmengen), Reihenfolge nach Aufbau und Elementen, Verlustaktionen nach Budget (Aufbau im ersten Zyklus, Rest spät, letzte Runde frei), beim Rasten geht die schwächste Karte. Bewertet wird mit `scoreHalf()`, neue Regeln gehören dorthin.
+`gamePlan()` in `public/logic.js` spielt die Hand durch: pro Rastzyklus die wertvollste Paarung der Handkarten (exakt über Teilmengen), Reihenfolge nach Aufbau und Elementen, Verlustaktionen nach Budget (Aufbau im ersten Zyklus, Rest spät, letzte Runde frei), beim Rasten geht die schwächste Karte. Bewertet wird mit `scoreHalf()`, neue Regeln gehören dorthin. Getragene Ausdauertränke gehen als `staminaItems` in den Plan ein (eigener Schritt `type: 'item'` vor der ersten Rast). `itemPlan()` schlägt für jeden getragenen Gegenstand vor, wann er sich lohnt.
+
+## Szenario abschließen
+Unter „Notizen“: Runden, Karten-EP, Münzen und Kampfziel in einem Schritt. `scenarioReward()` rechnet, gebucht wird in `app.js` (`erg`). Die Gutschrift je Held steht in `state.shared.results[szenario].rewards[name]` und wird beim Neu-Eintragen oder Löschen zurückgerechnet.
 
 ## Charakterbildschirm
 `public/held.js` zeichnet ihn und verarbeitet seine Klicks. Es bekommt alles über `heldCtx` aus `app.js` und hält keinen eigenen Zustand. Am Profil hängen `xp`, `gold`, `items` (`{id, worn}`), `enh` (gekaufte Verbesserungen je Klasse) und `tank`. `heldDefaults()` ergänzt die Felder bei alten Profilen. Gekaufte Verbesserungen rechnet `applyEnhancements()` in die Karten ein, deshalb läuft der Kartenvorrat immer über `pool()`.
