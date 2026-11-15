@@ -228,6 +228,13 @@ export function scoreHalf(half, p, cn = (c) => c) {
     v += cv;
   }
 
+  // Schädliche Zustände, die die eigene Seite treffen (z. B. Heilung mit Betäubung): Preis der Aktion
+  for (const c of half.drawbacks || []) {
+    v -= (CONDITION_VALUE[c] ?? 1) * 0.8;
+    const wen = half.heal && !/selbst/.test(half.text.join(' ')) ? 'den Geheilten' : 'die eigene Seite';
+    add(c === 'stun' ? `${cn(c)} trifft ${wen} und kostet einen Zug` : `${cn(c)} trifft ${wen}`, false);
+  }
+
   if (half.move) {
     v += half.move * 0.55 + (half.jump ? 0.5 : 0);
     if (p.rangedShare >= 0.4 && half.move >= 4) { v += 0.5; add('Weite Bewegung, um Fernkämpfer zu erreichen'); }
@@ -895,7 +902,7 @@ export function enhancementCost(sticker, slot, card, previous = 0) {
   return base + 25 * (level - 1) + 75 * previous;
 }
 
-const cloneHalf = (h) => ({ ...h, attacks: [...h.attacks], conditions: [...h.conditions], gen: [...h.gen], use: [...h.use], text: [...h.text], enh: [] });
+const cloneHalf = (h) => ({ ...h, attacks: [...h.attacks], conditions: [...h.conditions], drawbacks: [...(h.drawbacks || [])], gen: [...h.gen], use: [...h.use], text: [...h.text], enh: [] });
 
 // Rechnet gekaufte Verbesserungen in die Kartenwerte ein.
 export function applyEnhancements(card, list) {

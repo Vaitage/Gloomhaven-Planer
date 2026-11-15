@@ -48,7 +48,7 @@ const ELEM = (e) => term('element', e, e);
 const ACTION = {
   attack: term('action', 'attack', 'Angriff'),
   move: term('action', 'move', 'Bewegung'),
-  heal: term('action', 'heal', 'Heilen'),
+  heal: 'Heilung', // wie auf den gedruckten deutschen Karten
   shield: 'Schild',
   retaliate: 'Vergeltung',
   range: term('action', 'range', 'Reichweite'),
@@ -137,7 +137,7 @@ const emptyHalf = () => ({
   attacks: [], ranged: false, area: 0, targets: 1, allTargets: false,
   move: 0, jump: false, heal: 0, healAllies: false, shield: 0, shieldAllies: false,
   retaliate: 0, pierce: 0, push: 0, pull: 0, loot: 0, summon: false,
-  conditions: [], gen: [], use: [], text: [], slots: [],
+  conditions: [], drawbacks: [], gen: [], use: [], text: [], slots: [],
 });
 
 // Trifft die Aktion mehrere Ziele? Dann kosten Verbesserungen darauf das Doppelte.
@@ -152,6 +152,8 @@ function signed(a) {
   if (a.valueType === 'minus' || a.valueType === 'subtract') return `-${a.value}`;
   return `${a.value}`;
 }
+
+const HARMFUL = ['stun', 'disarm', 'immobilize', 'muddle', 'wound', 'poison', 'curse'];
 
 // Geht den Aktionsbaum durch. "ctx" merkt sich, zu welcher Hauptaktion
 // Unteraktionen (Reichweite, Zustände, Ziele) gehören.
@@ -243,9 +245,13 @@ function walk(actions, half, ctx) {
       }
       case 'condition': {
         const c = String(a.value).split(':')[0];
-        if (!half.conditions.includes(c)) half.conditions.push(c);
+        // Ein schädlicher Zustand an einer Heilung oder mit Ziel „selbst“ trifft die eigene Seite:
+        // das ist der Preis der Aktion, kein Effekt auf Gegner.
+        const ownSide = (ctx && ctx.kind === 'heal') || sub.some((x) => x.type === 'specialTarget' && /^(self|all(y|ies))/i.test(String(x.value)));
+        const list = ownSide && HARMFUL.includes(c) ? half.drawbacks : half.conditions;
+        if (!list.includes(c)) list.push(c);
         const inner = walk(sub, half, { kind: 'condition', multi });
-        out.push([COND(c), ...inner].join(', '));
+        out.push([list === half.drawbacks && ctx && ctx.kind === 'heal' ? `${COND(c)} (trifft den Geheilten)` : COND(c), ...inner].join(', '));
         break;
       }
       case 'element': {

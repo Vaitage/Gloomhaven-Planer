@@ -1,6 +1,8 @@
 {
   "_hinweis": "Eigene deutsche Übersetzungen für Texte, die Gloomhaven Secretariat nur englisch enthält. Aufbau wie die Label-Dateien von GHS. Unter 'ability' stehen Kartennamen (englischer Name -> gedruckter deutscher Name), unter 'custom' die Sondertexte. Inoffiziell übersetzt, Wortlaut kann von den gedruckten Karten abweichen.",
-  "ability": {},
+  "ability": {
+    "Amputate": "Amputation"
+  },
   "custom": {
     "gh": {
       "sun": {

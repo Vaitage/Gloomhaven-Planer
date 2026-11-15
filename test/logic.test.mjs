@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { stamina, resolveValue, scenarioProfile, cardPool, suggestHand, handStats, scoreCard, monsterStats } from '../public/logic.js';
+import { stamina, resolveValue, scenarioProfile, cardPool, suggestHand, handStats, scoreCard, scoreHalf, monsterStats } from '../public/logic.js';
 
 test('Ausdauer entspricht den bekannten Rundenzahlen', () => {
   // bekannte Werte ohne Verlustkarten: 8 -> 16, 9 -> 20, 10 -> 25, 11 -> 30, 12 -> 36
@@ -415,4 +415,21 @@ test('Wohlstandspunkte ergeben die Stufe', () => {
   for (const [punkte, erwartet] of Object.entries(stufe)) assert.equal(prosperityLevel(Number(punkte)).level, erwartet, `Punkte ${punkte}`);
   assert.equal(prosperityLevel(25).missing, 5);
   assert.equal(prosperityLevel(64).missing, null);
+});
+
+test('Betäubung an einer Heilung zählt als Preis, nicht als Effekt auf Gegner', { skip: !withData }, () => {
+  const saw = data.characters.find((c) => c.id === 'saw');
+  const karte = saw.cards.find((c) => c.id === 438);
+  assert.equal(karte.name, 'Amputation');
+  assert.deepEqual(karte.bottom.conditions, []);
+  assert.deepEqual(karte.bottom.drawbacks, ['stun']);
+  assert.deepEqual(karte.top.conditions, ['wound', 'immobilize']);
+  const profile = scenarioProfile(data, data.scenarios.find((x) => x.id === 1), 4, 2);
+  const unten = scoreCard(karte, profile).why.filter((w) => w.half === 'unten');
+  assert.ok(unten.some((w) => !w.good && /kostet einen Zug/.test(w.text)));
+  assert.ok(!unten.some((w) => /Elitegegner/.test(w.text)));
+  const ohne = scoreHalf({ ...karte.bottom, drawbacks: [] }, profile).value;
+  assert.ok(scoreHalf(karte.bottom, profile).value < ohne);
+  // Zustände an Angriffen bleiben Effekte auf Gegner
+  for (const c of data.characters) for (const k of c.cards) for (const h of [k.top, k.bottom]) if (h.drawbacks.length) assert.ok(h.heal > 0 || /selbst|Verbündete/.test(h.text.join(' ')), `${k.nameEn}`);
 });
