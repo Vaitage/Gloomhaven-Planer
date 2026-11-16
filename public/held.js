@@ -201,7 +201,7 @@ function rechner(id, label, plus, minus) {
 }
 
 // Dazurechnen und abziehen in einer Zeile. Den Gesamtstand direkt eintragen geht über „Stand ändern“.
-function standHtml(ctx, was, wert, label) {
+function betragHtml(ctx, was, wert, label) {
   if (ctx.local.standEdit === was) {
     return `
     <div class="rechner">
@@ -297,12 +297,12 @@ function uebersichtHtml(ctx, p, c) {
       ${epBalken(ctx, p)}
       ${pr.ready ? `<div class="aufstieg-ruf"><b>Stufenaufstieg möglich</b><button type="button" class="haupt" data-held="aufstieg">Karte wählen</button></div>` : ''}
       ${p.xpGeschaetzt ? '<p class="hinweis">Dein EP-Stand ist noch geschätzt. Trag ihn über „Stand ändern“ ein.</p>' : ''}
-      ${standHtml(ctx, 'ep', p.xp, 'EP')}
+      ${betragHtml(ctx, 'ep', p.xp, 'EP')}
     </section>
     <section>
       <h2>Gold</h2>
       <p class="gold"><span class="muenze" aria-hidden="true"></span><b>${p.gold}</b> Gold</p>
-      ${standHtml(ctx, 'gold', p.gold, 'Gold')}
+      ${betragHtml(ctx, 'gold', p.gold, 'Gold')}
     </section>
     ${questHtml(ctx, p)}
     <section>
