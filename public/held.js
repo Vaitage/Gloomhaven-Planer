@@ -111,7 +111,7 @@ function perkEmpfehlungHtml(ctx, p, c) {
     ${laut ? `<h3 class="zwischen">Empfehlung</h3><ol class="vorschlaege ohne-nummer">${zeile(laut, '<span class="marke gut">nächster Schritt laut Guide</span>')}</ol>` : ''}
     <h3 class="zwischen">${laut ? 'Rechnerisch am stärksten' : 'Empfehlung nach Rechnung'}</h3>
     <ol class="vorschlaege">${rest.map((x) => zeile(x, '')).join('')}</ol>
-    <p class="hinweis">Verglichen wird dein Deck vorher und nachher.${laut ? ` Die Reihenfolge stammt aus dem ${esc(guide.quelle)}.` : ''}</p>`;
+    <p class="hinweis">Verglichen wird dein Deck vorher und nachher.${laut ? ` Die Reihenfolge stammt aus dem ${esc(guide.quelle)}.` : ''}${laut && guide.perkHinweis ? ` ${esc(guide.perkHinweis)}` : ''}</p>`;
 }
 
 function deckHtml(ctx, p, c) {
@@ -459,7 +459,7 @@ function ausruestungHtml(ctx, p) {
       <h3 class="zwischen">Mit deinen ${p.gold} Gold bezahlbar</h3>
       <div class="g-liste">${leistbar.map(zeile).join('') || `<p class="leer">${p.gold ? 'Dafür reicht dein Gold gerade nicht.' : 'Trag unter „Übersicht“ dein Gold ein, dann siehst du hier, was du dir leisten kannst.'}</p>`}</div>
       ${sparen.length ? `<h3 class="zwischen">Darauf lohnt es sich zu sparen</h3><div class="g-liste">${sparen.map(zeile).join('')}</div>` : ''}
-      ${guideListe.length ? `<p class="hinweis">Reihenfolge laut ${esc(guide.quelle)}: ${guideListe.map((i) => esc(i.name)).join(', ')}.</p>` : ''}
+      ${guideListe.length ? `<p class="hinweis">Reihenfolge laut ${esc(guide.quelle)}: ${guideListe.map((i) => esc(i.name)).join(', ')}.${guide.gegenstaendeHinweis ? ` ${esc(guide.gegenstaendeHinweis)}` : ''}</p>` : ''}
     </section>`;
 }
 

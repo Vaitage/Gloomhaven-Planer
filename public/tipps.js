@@ -106,7 +106,9 @@ export const GUIDES = {
     verbesserungen: ['+1 Reichweite unten auf Perverse Edge.', 'Stärkung unten auf Empathetic Assault.', 'Wunde oder +1 Angriff oben auf Frigid Apparition.'],
   },
   sun: {
-    ...quelle('Sunkeeper'),
+    // Stufe 2 bis 8 nach gameslikefinder.com, Stufe 9, Perks und Gegenstände nach dem Guide von u/Gripeaway (Reddit, vom Nutzer geschickt)
+    quelle: 'Sunkeeper-Guide von u/Gripeaway (Reddit) und gameslikefinder.com',
+    url: 'https://www.reddit.com/r/Gloomhaven/comments/7oe82f/',
     aufstieg: {
       2: k('Practical Plans', 'Angriff und eine weite Bewegung auf einer Karte. Genau das fehlt dir auf Stufe 1.'),
       3: k('Mobilizing Axiom', 'Auf lange Sicht dein wichtigster Lichterzeuger.'),
@@ -115,10 +117,13 @@ export const GUIDES = {
       6: k('Illuminate the Target', 'Die Standardwahl.', 'Supportive Chant, wenn kein Nahkämpfer in der Gruppe ist'),
       7: k('Weapon of Purity', 'Am vielseitigsten.', 'Bright Aegis in großen Gruppen wie einer Viererrunde'),
       8: k('Cleansing Force', 'Starke untere Aktion mit Bewegung und Lichterzeugung.'),
-      9: k('Angelic Ascension', 'Die beste Bewegung über fast das ganze Szenario und am Ende ein Kraftschub.'),
+      9: k('Angelic Ascension', 'Klare Wahl: Bis du sie brauchst, ist sie eine Bewegung 6 mit Springen. Als Verlust gibt sie vor einem schweren Raum Vorteil und starken Zusatzschaden auf vier Angriffe. Dafür fliegt Holy Strike aus der Hand, wenn du dort keine Wunde aufgeklebt hast, sonst Hammer Blow.', 'Divine Intervention lenkt Schaden um, gibt danach aber keinen Schild und kostet eine Verlustkarte'),
     },
-    perks: ['item+add:2x+1', 're:1x-2>1x+0', 'rm:2x-1', 're:1x+0>1x+2', 'rm:4x+0', 'add:1x+0R:stun', 'add:2x+0R:light', 'add:2x+0R:heal1', 'add:2x+1R', 'add:2x+0R:shield1'],
-    gegenstaende: ['Minor Stamina Potion', 'Boots of Striding', 'Minor Healing Potion', 'Hide Armor', 'Iron Helmet'],
+    // Erst ein Deck ohne rollende Karten bauen: rollende Modifikatoren verderben Angriffe mit Vorteil, die die Klasse oft hat
+    perks: ['item+add:2x+1', 're:1x-2>1x+0', 'rm:2x-1', 're:1x+0>1x+2', 'rm:4x+0', 'scen', 'add:1x+0R:stun', 'add:2x+1R', 'add:2x+0R:light', 'add:2x+0R:heal1', 'add:2x+0R:shield1'],
+    perkHinweis: 'Rollende Karten kommen bewusst zuletzt: Bei Angriffen mit Vorteil verderben sie oft das bessere Ergebnis, und die Klasse greift oft mit Vorteil an.',
+    gegenstaende: ['Hide Armor', 'Chainmail', 'Heater Shield', 'Minor Mana Potion', 'Minor Healing Potion', 'Minor Stamina Potion'],
+    gegenstaendeHinweis: 'Rüstung, etwas, das Licht erzeugt, und ein Schild, danach Heil- und Ausdauertränke. Mit dem ersten Perk zählen die −1-Karten schwerer Rüstung nicht.',
     verbesserungen: [
       '+1 Schild unten auf Defensive Stance. Der wichtigste Kauf, weil der Schild das ganze Szenario wirkt.',
       'Licht auf Cautious Advance oder Tactical Order, damit deine Lichtkarten ihren Bonus bekommen.',
