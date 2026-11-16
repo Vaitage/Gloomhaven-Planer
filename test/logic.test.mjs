@@ -116,7 +116,7 @@ test('Zielreihenfolge stellt Bosse ans Ende', { skip: !withData }, () => {
 });
 
 // ---------- Szenariolänge, Initiative, Schaden ----------
-import { autoPlan, estimateRounds, calibration, initiativeOdds, incomingDamage, xpProgress, xpLevel, levelUpAdvice, enhancementCost, slotStickers, applyEnhancements, enhancementAdvice, scoreItem, shopAdvice, reputationPriceChange, itemPrice, itemPlan, scenarioReward, prosperityLevel } from '../public/logic.js';
+import { autoPlan, estimateRounds, calibration, initiativeOdds, incomingDamage, xpProgress, xpLevel, levelUpAdvice, enhancementCost, slotStickers, applyEnhancements, enhancementAdvice, scoreItem, shopAdvice, reputationPriceChange, itemPrice, itemPlan, scenarioReward, prosperityLevel, questProgress } from '../public/logic.js';
 
 const sunHand = (scenarioId) => {
   const sun = data.characters.find((c) => c.id === 'sun');
@@ -648,4 +648,36 @@ test('Gedruckte deutsche Kartennamen der Sonnenhüterin', { skip: !withData }, (
   assert.equal(name(175), 'Läuternde Aura');
   assert.equal(sun.cards.find((c) => c.id === 183).nameEn, 'Hammer Blow');
   assert.equal(sun.cards.filter((c) => c.name !== c.nameEn).length, 19);
+});
+
+test('Persönliche Quest: Fortschritt, Reihenfolge und Abschluss', () => {
+  const quest = { goals: [{ text: 'A', count: 3, after: [] }, { text: 'B', count: 1, after: [0] }] };
+  let st = questProgress(quest, [2, 1]);
+  assert.equal(st.goals[0].done, 2);
+  assert.equal(st.goals[1].locked, true);
+  assert.equal(st.goals[1].done, 0); // zählt erst, wenn Ziel A fertig ist
+  assert.equal(st.complete, false);
+  assert.equal(Math.round(st.share * 100), 33);
+  st = questProgress(quest, [9, 1]);
+  assert.equal(st.goals[0].done, 3);
+  assert.equal(st.goals[1].locked, false);
+  assert.equal(st.complete, true);
+  assert.equal(st.share, 1);
+  assert.equal(questProgress(quest, ['x', -4]).got, 0);
+  assert.equal(questProgress({ goals: [] }).complete, false);
+});
+
+test('Alle 24 persönlichen Quests sind importiert, die Belohnung nennt keinen Klassennamen', { skip: !withData }, () => {
+  assert.equal(data.quests.length, 24);
+  for (const q of data.quests) {
+    assert.ok(q.id >= 510 && q.id <= 533 && q.name, `Quest ${q.id}`);
+    assert.ok(q.goals.length >= 1);
+    for (const g of q.goals) {
+      assert.ok(g.text && !g.text.includes('%') && g.count >= 1, `Ziel in ${q.id}: ${g.text}`);
+      for (const j of g.after) assert.ok(q.goals[j], `Vorbedingung in ${q.id}`);
+    }
+    assert.ok(q.reward && (q.reward.envelope || data.characters.find((c) => c.id === q.reward.cls).icon), `Belohnung ${q.id}`);
+    assert.deepEqual(Object.keys(q.reward).length, 1);
+  }
+  assert.equal(data.quests.find((q) => q.id === 511).name, 'Kaufmannsgilde');
 });

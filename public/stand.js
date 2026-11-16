@@ -58,6 +58,11 @@ export function cleanProfile(roh) {
     p.items = (Array.isArray(p.items) ? p.items : []).filter(isObject)
       .map((e) => ({ id: ganz(e.id, 0, 9999, null), worn: e.worn === true })).filter((e) => e.id !== null).slice(0, 200);
   }
+  if ('quest' in p) {
+    const id = isObject(p.quest) ? ganz(p.quest.id, 1, 9999, null) : null;
+    if (id === null) delete p.quest;
+    else p.quest = { id, done: (Array.isArray(p.quest.done) ? p.quest.done : []).slice(0, 12).map((x) => ganz(x, 0, 999, 0)) };
+  }
   if ('enh' in p) {
     const enh = {};
     if (isObject(p.enh)) {

@@ -1,6 +1,6 @@
 // Charakterbildschirm: Erfahrung, Gold, Ausrüstung, Stufenaufstieg und Verbesserungen.
 // Bekommt alles Nötige über "ctx" von app.js, damit hier kein eigener Zustand lebt.
-import { xpProgress, XP_LEVELS, levelUpAdvice, shopAdvice, itemPrice, COIN_VALUE, prosperityLevel, PROSPERITY_STEPS, reputationPriceChange, scoreItem, attackFit, slotStickers, enhancementCost, enhancementAdvice, buildDeck, deckStats, perkAdvice, guidePerk, perksAllowed } from './logic.js';
+import { xpProgress, XP_LEVELS, levelUpAdvice, shopAdvice, itemPrice, COIN_VALUE, prosperityLevel, PROSPERITY_STEPS, questProgress, reputationPriceChange, scoreItem, attackFit, slotStickers, enhancementCost, enhancementAdvice, buildDeck, deckStats, perkAdvice, guidePerk, perksAllowed } from './logic.js';
 import { GUIDES } from './tipps.js';
 
 const SLOT_NAMEN = { head: 'Kopf', body: 'Körper', onehand: 'Eine Hand', twohand: 'Zwei Hände', legs: 'Beine', small: 'Kleiner Gegenstand' };
@@ -212,6 +212,61 @@ function slotWarnungen(p, getragen) {
   return w;
 }
 
+// Persönliche Quest: auswählen, Ziele abhaken oder hochzählen. Die Belohnung zeigt die App nur so,
+// wie sie auf der Karte steht: als Symbol oder Umschlag, ohne den Namen der Klasse.
+const QUEST_KAESTCHEN = 12; // bis zu dieser Anzahl gibt es Kästchen zum Abhaken, darüber ein Zahlenfeld
+function questHtml(ctx, p) {
+  const { esc, data, local } = ctx;
+  const quests = data.quests || [];
+  if (!quests.length) return '';
+  const quest = p.quest ? quests.find((q) => q.id === p.quest.id) : null;
+  if (!quest) {
+    return `
+    <section>
+      <h2>Persönliche Quest</h2>
+      <label class="feldname" for="questWahl">Welche Karte hast du gezogen?</label>
+      <select id="questWahl" class="auswahl">
+        <option value="">Quest wählen</option>
+        ${quests.map((q) => `<option value="${q.id}">${q.id} ${esc(q.name)}</option>`).join('')}
+      </select>
+      <p class="hinweis">Die Nummer steht unten auf der Karte. Die Ziele siehst du erst nach der Auswahl.</p>
+    </section>`;
+  }
+  // „Gold im Besitz“ zählt die App selbst aus deinem Goldstand
+  const stand = quest.goals.map((g, i) => (g.auto === 'gold' ? p.gold : p.quest.done[i]));
+  const st = questProgress(quest, stand);
+  const ziele = st.goals.map((g, i) => {
+    const feld = quest.goals[i].auto === 'gold' ? '<p class="hinweis">Zählt automatisch dein Gold aus der Übersicht.</p>' : g.count <= QUEST_KAESTCHEN
+      ? `<div class="quest-haken" role="group" aria-label="${esc(g.text)}">${Array.from({ length: g.count }, (_, k) => `<button type="button" data-act="quest-haken" data-z="${i}" data-k="${k}" aria-pressed="${k < g.done}" aria-label="${k + 1} von ${g.count}" ${g.locked ? 'disabled' : ''}>${k < g.done ? '✕' : ''}</button>`).join('')}</div>`
+      : `<div class="zaehler quest-zahl">
+          <button type="button" class="leise" data-act="quest-minus" data-z="${i}" aria-label="Eins weniger" ${g.locked || g.done <= 0 ? 'disabled' : ''}>−</button>
+          <input type="number" inputmode="numeric" enterkeyhint="done" min="0" max="${g.count}" value="${g.done}" data-quest-zahl="${i}" aria-label="${esc(g.text)}" ${g.locked ? 'disabled' : ''}>
+          <button type="button" class="leise" data-act="quest-plus" data-z="${i}" aria-label="Eins mehr" ${g.locked || g.done >= g.count ? 'disabled' : ''}>+</button>
+        </div>`;
+    return `<li class="${g.complete ? 'fertig' : ''} ${g.locked ? 'gesperrt' : ''}">
+        <p><b>${esc(g.text)}</b><span class="quest-stand">${g.done} von ${g.count}</span></p>
+        ${feld}
+        ${g.locked ? '<p class="hinweis">Erst dran, wenn das Ziel davor erfüllt ist.</p>' : ''}
+      </li>`;
+  }).join('');
+  const klasse = quest.reward && quest.reward.cls ? data.characters.find((x) => x.id === quest.reward.cls) : null;
+  const lohn = klasse && klasse.icon
+    ? `<p class="quest-lohn"><span>Belohnung laut Karte: neue Klasse mit diesem Symbol</span><svg viewBox="${esc(klasse.icon.box)}" fill="currentColor" role="img" aria-label="Symbol der freigeschalteten Klasse">${klasse.icon.body}</svg></p>`
+    : quest.reward && quest.reward.envelope ? `<p class="quest-lohn"><span>Belohnung laut Karte: Umschlag ${esc(quest.reward.envelope)} öffnen</span></p>` : '';
+  return `
+    <section>
+      <h2>Persönliche Quest</h2>
+      <p class="quest-name"><b>${esc(quest.name)}</b> <span class="hinweis">Karte ${quest.id}</span></p>
+      <div class="quest-balken" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(st.share * 100)}" aria-label="Fortschritt der Quest"><span style="width:${Math.round(st.share * 100)}%"></span></div>
+      <ul class="quest-ziele">${ziele}</ul>
+      ${st.complete ? '<p class="gut-text"><b>Quest erfüllt.</b> Dein Held geht beim nächsten Besuch in Gloomhaven in den Ruhestand.</p>' : ''}
+      ${lohn}
+      ${local.questWeg
+    ? '<p class="hinweis">Quest wirklich entfernen? Der Fortschritt geht verloren.</p><div class="knopfreihe"><button type="button" class="leise" data-act="quest-weg-ja">Ja, entfernen</button><button type="button" class="leise" data-act="quest-weg-nein">Abbrechen</button></div>'
+    : '<button type="button" class="text-knopf" data-act="quest-weg">Andere Quest wählen</button>'}
+    </section>`;
+}
+
 function uebersichtHtml(ctx, p, c) {
   const { esc, state } = ctx;
   const lvl = state.shared.level;
@@ -245,6 +300,7 @@ function uebersichtHtml(ctx, p, c) {
       </div>
       <p class="hinweis">Bei Szenariostufe ${lvl} ist jede eingesammelte Münze ${MUENZWERT[lvl] ?? 2} Gold wert.</p>
     </section>
+    ${questHtml(ctx, p)}
     <section>
       <h2>${esc(c.name)}</h2>
       <div class="kennzahlen drei">
@@ -621,6 +677,22 @@ export function heldClick(ctx, b) {
     return fertig();
   }
   if (act === 'ep-bonus') { p.xp += Number(b.dataset.wert) || 0; p.xpGeschaetzt = false; return fertig(); }
+  if (act && act.startsWith('quest-')) {
+    if (act === 'quest-weg') { ctx.local.questWeg = true; ctx.render(); return true; }
+    if (act === 'quest-weg-nein') { ctx.local.questWeg = false; ctx.render(); return true; }
+    if (act === 'quest-weg-ja') { ctx.local.questWeg = false; delete p.quest; return fertig(); }
+    const quest = p.quest && (ctx.data.quests || []).find((q) => q.id === p.quest.id);
+    if (!quest) return true;
+    const z = Number(b.dataset.z);
+    const ziel = quest.goals[z];
+    if (!ziel) return true;
+    const jetzt = Math.max(0, Math.min(ziel.count, Number(p.quest.done[z]) || 0));
+    // Kästchen: ein Tipp auf das nächste freie hakt ab, ein Tipp auf ein abgehaktes nimmt ab dort zurück
+    const k = Number(b.dataset.k);
+    p.quest.done[z] = act === 'quest-haken' ? (k < jetzt ? k : k + 1) : Math.max(0, Math.min(ziel.count, jetzt + (act === 'quest-plus' ? 1 : -1)));
+    for (let i = 0; i < quest.goals.length; i++) p.quest.done[i] = Number(p.quest.done[i]) || 0;
+    return fertig();
+  }
   if (act === 'wohlstand-plus' || act === 'wohlstand-minus') {
     wohlstandSetzen(ctx, wohlstand(ctx).points + (act === 'wohlstand-plus' ? 1 : -1));
     ctx.saveShared();
@@ -719,6 +791,20 @@ export function heldInput(ctx, target) {
 }
 
 export function heldChange(ctx, target) {
+  if (target.id === 'questWahl' || target.dataset.questZahl != null) {
+    const p = ctx.profile();
+    if (target.id === 'questWahl') {
+      const quest = (ctx.data.quests || []).find((q) => q.id === Number(target.value));
+      if (quest) p.quest = { id: quest.id, done: quest.goals.map(() => 0) };
+    } else if (p.quest) {
+      const quest = (ctx.data.quests || []).find((q) => q.id === p.quest.id);
+      const z = Number(target.dataset.questZahl);
+      if (quest && quest.goals[z]) p.quest.done[z] = Math.max(0, Math.min(quest.goals[z].count, Math.round(Number(target.value) || 0)));
+    }
+    ctx.saveProfile();
+    ctx.render();
+    return true;
+  }
   if (target.id === 'wohlstandPunkte' || target.id === 'ansehenWert') {
     if (target.id === 'wohlstandPunkte') wohlstandSetzen(ctx, target.value);
     else ctx.state.shared.reputation = Math.max(-20, Math.min(20, Math.round(Number(target.value) || 0)));

@@ -90,6 +90,7 @@ function resolveText(text, depth = 0) {
       if (p[1] === 'card' && p[2] === 'experience') return `${arg || ''} EP`.trim();
       if (p[1] === 'card') return '';
       if (p[1] === 'damage') return arg ? `${arg} Schaden` : 'Schaden';
+      if (p[1] === 'checkmark') return 'Haken';
       if (p[1] === 'custom' && p[2] === 'advantage') return 'Vorteil';
       if (p[1] === 'custom' && p[2] === 'disadvantage') return 'Nachteil';
       if (p[1] === 'specialTarget' && p[2] === 'self') return 'selbst';
@@ -641,6 +642,25 @@ const conditionNames = {};
 for (const c of ['stun', 'immobilize', 'disarm', 'wound', 'muddle', 'poison', 'curse', 'bless', 'strengthen', 'invisible']) {
   conditionNames[c] = COND(c);
 }
+// Persönliche Quests: Name, Ziele mit Anzahl und die Belohnung so, wie sie auf der Karte steht
+// (Symbol der Klasse oder Umschlag). Den Namen der Klasse nennt die App dabei nicht.
+const quests = [];
+if (existsSync(join(GH, 'personal-quests.json'))) {
+  // Platzhalter, die GHS mit Symbolen oder eigenen Oberflächentexten füllt
+  const EIGEN = { '%character.progress.gold%': 'Gold im Besitz', '%game.exhausted%': 'Szenarien, in denen du erschöpft bist', '%game.checkmark%': 'Haken' };
+  const klartext = (t) => resolveText(String(t).replace(/%[^%]+%/g, (m) => EIGEN[m] ?? m)).replace(/\((\p{L}+)\)/gu, '$1').replace(/\s+/g, ' ').trim();
+  for (const q of JSON.parse(readFileSync(join(GH, 'personal-quests.json'), 'utf8'))) {
+    const id = Number(q.cardId);
+    const name = firstOf(['personalQuest', 'gh', String(q.cardId), ''], [own, de, en]);
+    if (!id || !name) continue;
+    quests.push({
+      id, name,
+      goals: (q.requirements || []).map((r) => ({ text: klartext(r.name), count: Math.max(1, Number(r.counter) || 1), after: (r.requires || []).map((n) => n - 1), ...(r.autotrack === 'gold' ? { auto: 'gold' } : {}) })),
+      reward: q.unlockCharacter ? { cls: q.unlockCharacter } : q.openEnvelope ? { envelope: String(q.openEnvelope) } : null,
+    });
+  }
+}
+
 const elementNames = {};
 for (const e of ['fire', 'ice', 'air', 'earth', 'light', 'dark', 'wild']) elementNames[e] = ELEM(e);
 
@@ -650,7 +670,7 @@ const out = {
   imageBase: 'https://raw.githubusercontent.com/any2cards/worldhaven/master/images/character-ability-cards/gloomhaven/',
   itemImageBase: 'https://raw.githubusercontent.com/any2cards/worldhaven/master/images/items/gloomhaven/',
   conditionNames, elementNames,
-  characters, monsters, decks, scenarios, items,
+  characters, monsters, decks, scenarios, items, quests,
 };
 mkdirSync(dirname(outFile), { recursive: true });
 writeFileSync(outFile, JSON.stringify(out));

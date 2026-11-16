@@ -860,6 +860,23 @@ export function itemPlan(plan, items, profile, opts = {}) {
   });
 }
 
+// ---------- Persönliche Quest ----------
+
+// Stand einer persönlichen Quest. done ist je Ziel, wie oft es schon erfüllt wurde.
+// Ein Ziel mit Vorbedingung ist gesperrt, bis die genannten Ziele fertig sind.
+export function questProgress(quest, done = []) {
+  const stand = quest.goals.map((g, i) => Math.max(0, Math.min(g.count, Math.round(Number(done[i]) || 0))));
+  const goals = quest.goals.map((g, i) => {
+    const locked = (g.after || []).some((j) => stand[j] < quest.goals[j].count);
+    return { text: g.text, count: g.count, done: locked ? 0 : stand[i], locked, complete: !locked && stand[i] >= g.count };
+  });
+  const total = goals.reduce((n, g) => n + g.count, 0);
+  const got = goals.reduce((n, g) => n + g.done, 0);
+  // Anteil je Ziel gleich gewichtet, damit ein Ziel mit 200 Gold die anderen nicht erdrückt
+  const share = goals.length ? goals.reduce((n, g) => n + g.done / g.count, 0) / goals.length : 0;
+  return { goals, total, got, share, complete: goals.length > 0 && goals.every((g) => g.complete) };
+}
+
 // ---------- Nach dem Szenario ----------
 
 export const COIN_VALUE = [2, 2, 3, 3, 4, 4, 5, 6]; // Gold je Münze nach Szenariostufe

@@ -43,6 +43,8 @@ Unter „Notizen“: Runden, Karten-EP, Münzen und Kampfziel in einem Schritt. 
 ## Charakterbildschirm
 `public/held.js` zeichnet ihn und verarbeitet seine Klicks. Es bekommt alles über `heldCtx` aus `app.js` und hält keinen eigenen Zustand. Am Profil hängen `xp`, `gold`, `items` (`{id, worn}`), `enh` (gekaufte Verbesserungen je Klasse) und `tank`. `heldDefaults()` ergänzt die Felder bei alten Profilen. Gekaufte Verbesserungen rechnet `applyEnhancements()` in die Karten ein, deshalb läuft der Kartenvorrat immer über `pool()`.
 
+Die persönliche Quest steht in der Übersicht (`questHtml()`): Der Import schreibt alle 24 Quests nach `quests` (Name, Ziele mit Anzahl und Vorbedingung, Belohnung), am Profil steht `quest` (`{id, done}`), `questProgress()` rechnet. Die Belohnung wird nur so gezeigt, wie sie auf der Karte steht (Klassensymbol oder Umschlag), nie mit Klassennamen. Die Auswahlliste nennt nur Nummer und Name.
+
 Guide-Empfehlungen stehen in `public/tipps.js` für alle 17 Klassen (Kartennamen englisch wie in den GHS-Daten, Text in eigenen Worten, Quelle nennen). Die Aufstiegsempfehlung folgt dem Guide, wenn einer hinterlegt ist, sonst der Rechnung aus `levelUpAdvice()`. Ein Test prüft, dass jede genannte Karte, jeder Perk-Schlüssel und jeder Gegenstand in den Daten existiert.
 
 ## Angriffsdeck und Perks

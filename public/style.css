@@ -507,3 +507,21 @@ main { overflow-wrap: anywhere; }
 /* Rast: kurz oder lang */
 .rast-art { margin: 0 0 8px; max-width: 320px; }
 .rast-art button { min-height: 44px; }
+
+/* Persönliche Quest */
+.quest-name { margin: 0 0 8px; font-size: 1.1rem; }
+.quest-balken { height: 10px; border-radius: 6px; background: var(--tiefe); border: 1px solid var(--schiefer-hell); overflow: hidden; }
+.quest-balken span { display: block; height: 100%; background: var(--klasse); }
+.quest-ziele { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 12px; }
+.quest-ziele > li { padding: 10px 12px; border-radius: 8px; background: var(--schiefer); border-left: 3px solid var(--schiefer-hell); }
+.quest-ziele > li.fertig { border-left-color: var(--moos); }
+.quest-ziele > li.gesperrt { opacity: .6; }
+.quest-ziele p { margin: 0 0 8px; display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.quest-ziele .hinweis { display: block; margin: 8px 0 0; }
+.quest-stand { flex: none; color: var(--pergament-leise); font-variant-numeric: tabular-nums; }
+.quest-haken { display: flex; flex-wrap: wrap; gap: 8px; }
+.quest-haken button { width: 44px; height: 44px; min-height: 44px; padding: 0; border-radius: 6px; border: 2px solid var(--schiefer-hell); background: var(--tiefe); color: var(--tinte); font-size: 1.3rem; font-weight: 700; line-height: 1; }
+.quest-haken button[aria-pressed="true"] { background: var(--klasse); border-color: var(--klasse); }
+.quest-zahl { max-width: 220px; grid-template-columns: 48px minmax(0, 1fr) 48px; display: grid; }
+.quest-lohn { display: flex; align-items: center; gap: 12px; margin: 4px 0 8px; color: var(--pergament-leise); }
+.quest-lohn svg { flex: none; width: 40px; height: 40px; color: var(--pergament); }
