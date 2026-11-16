@@ -1,6 +1,7 @@
 import { scenarioProfile, cardPool, scoreCard, suggestHand, handStats, stamina, autoPlan, itemPlan, scenarioReward, perksAllowed, estimateRounds, calibration, incomingDamage, xpProgress, applyEnhancements } from './logic.js';
 import { cleanState } from './stand.js';
-import { renderHeld, heldClick, heldInput, heldChange, heldDefaults, stickerName } from './held.js';
+import { renderHeld, heldClick, heldInput, heldChange, heldDefaults, stickerName, mitInitiative } from './held.js';
+import { GUIDES } from './tipps.js';
 import { renderSetup, setupStart, setupClick, setupInput, setupFarbe } from './setup.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -479,6 +480,7 @@ function renderHand() {
         <button type="button" class="haupt" data-act="vorschlag">Vorschlag für dieses Szenario übernehmen</button>
         ${cards.length ? '<button type="button" class="leise" data-act="leeren">Hand leeren</button>' : ''}
       </div>
+      ${GUIDES[c.id] && GUIDES[c.id].start && profile().level <= 2 ? `<p class="hinweis">${esc(mitInitiative(GUIDES[c.id].start, c.cards))} Der Vorschlag oben richtet sich dagegen nach dem Szenario.</p>` : ''}
     </section>
     <section>
       <h2>Ausdauer</h2>
