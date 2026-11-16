@@ -12,7 +12,7 @@ const ZEILEN_NAMEN = {
 };
 const FORM_NAMEN = { square: 'Quadrat', circle: 'Kreis', diamond: 'Raute', diamond_plus: 'Raute mit Plus', hex: 'Sechseck' };
 const MUENZWERT = COIN_VALUE; // Gold je Münze nach Szenariostufe
-const HELD_REITER = [['uebersicht', 'Übersicht'], ['ausruestung', 'Ausrüstung'], ['aufstieg', 'Aufstieg'], ['deck', 'Angriffsdeck'], ['verbessern', 'Verbessern']];
+const HELD_REITER = [['uebersicht', 'Übersicht'], ['ausruestung', 'Ausrüstung'], ['aufstieg', 'Aufstieg'], ['deck', 'Deck'], ['verbessern', 'Verbessern']];
 
 // Ergänzt fehlende Felder bei Profilen, die vor dem Charakterbildschirm angelegt wurden.
 export function heldDefaults(p) {
@@ -111,7 +111,7 @@ function perkEmpfehlungHtml(ctx, p, c) {
     ${laut ? `<h3 class="zwischen">Empfehlung</h3><ol class="vorschlaege ohne-nummer">${zeile(laut, '<span class="marke gut">nächster Schritt laut Guide</span>')}</ol>` : ''}
     <h3 class="zwischen">${laut ? 'Rechnerisch am stärksten' : 'Empfehlung nach Rechnung'}</h3>
     <ol class="vorschlaege">${rest.map((x) => zeile(x, '')).join('')}</ol>
-    <p class="hinweis">Die Rechnung vergleicht dein Deck vorher und nachher: mittlerer Schaden, Wert der Zusatzeffekte und wie oft eine schlechte Karte kommt.${laut ? ` Die Reihenfolge stammt aus dem ${esc(guide.quelle)}.` : ''}</p>`;
+    <p class="hinweis">Verglichen wird dein Deck vorher und nachher.${laut ? ` Die Reihenfolge stammt aus dem ${esc(guide.quelle)}.` : ''}</p>`;
 }
 
 function deckHtml(ctx, p, c) {
@@ -195,9 +195,24 @@ function rechner(id, label, plus, minus) {
     <div class="rechner">
       <label class="sr" for="${id}">${label}</label>
       <input id="${id}" type="number" inputmode="numeric" enterkeyhint="done" min="0" max="9999" placeholder="${label}">
-      <button type="button" class="haupt" data-act="${plus}">Dazurechnen</button>
-      <button type="button" class="leise" data-act="${minus}">Abziehen</button>
+      <button type="button" class="haupt" data-act="${plus}" aria-label="${label} dazurechnen">+ Dazu</button>
+      <button type="button" class="leise" data-act="${minus}" aria-label="${label} abziehen">− Ab</button>
     </div>`;
+}
+
+// Dazurechnen und abziehen in einer Zeile. Den Gesamtstand direkt eintragen geht über „Stand ändern“.
+function standHtml(ctx, was, wert, label) {
+  if (ctx.local.standEdit === was) {
+    return `
+    <div class="rechner">
+      <label for="standWert">Neuer ${label}-Stand</label>
+      <input id="standWert" type="number" inputmode="numeric" enterkeyhint="done" min="0" max="9999" value="${wert}">
+      <button type="button" class="haupt" data-act="stand-ok" data-was="${was}">Übernehmen</button>
+      <button type="button" class="leise" data-act="stand-zu">Abbrechen</button>
+    </div>`;
+  }
+  return `${rechner(`${was}Wert`, label, `${was}-plus`, `${was}-minus`)}
+    <div class="stand-zeile"><button type="button" class="text-knopf" data-act="stand-edit" data-was="${was}">Stand ändern</button>${was === 'ep' ? '<button type="button" class="text-knopf" data-go="notizen">Szenario abschließen</button>' : ''}</div>`;
 }
 
 function slotWarnungen(p, getragen) {
@@ -269,8 +284,6 @@ function questHtml(ctx, p) {
 
 function uebersichtHtml(ctx, p, c) {
   const { esc, state } = ctx;
-  const lvl = state.shared.level;
-  const bonus = 4 + 2 * lvl;
   const pr = xpProgress(p.xp, p.level);
   const getragen = p.items.filter((e) => e.worn).map((e) => itemById(ctx, e.id)).filter(Boolean);
   const warn = slotWarnungen(p, getragen);
@@ -283,22 +296,13 @@ function uebersichtHtml(ctx, p, c) {
       <h2>Erfahrung</h2>
       ${epBalken(ctx, p)}
       ${pr.ready ? `<div class="aufstieg-ruf"><b>Stufenaufstieg möglich</b><button type="button" class="haupt" data-held="aufstieg">Karte wählen</button></div>` : ''}
-      ${p.xpGeschaetzt ? '<p class="hinweis">Dein EP-Stand ist noch nicht eingetragen. Gib ihn ein und tippe auf „Als Gesamtstand setzen“.</p>' : ''}
-      ${rechner('epWert', 'EP', 'ep-plus', 'ep-minus')}
-      <div class="knopfreihe">
-        <button type="button" class="leise" data-act="ep-bonus" data-wert="${bonus}">Szenario geschafft: +${bonus} EP</button>
-        <button type="button" class="leise" data-act="ep-setzen">Als Gesamtstand setzen</button>
-      </div>
-      <p class="hinweis">Der Szenario-Bonus gilt für Szenariostufe ${lvl}. Die EP von deinen Karten kommen dazu.</p>
+      ${p.xpGeschaetzt ? '<p class="hinweis">Dein EP-Stand ist noch geschätzt. Trag ihn über „Stand ändern“ ein.</p>' : ''}
+      ${standHtml(ctx, 'ep', p.xp, 'EP')}
     </section>
     <section>
       <h2>Gold</h2>
       <p class="gold"><span class="muenze" aria-hidden="true"></span><b>${p.gold}</b> Gold</p>
-      ${rechner('goldWert', 'Gold', 'gold-plus', 'gold-minus')}
-      <div class="knopfreihe">
-        <button type="button" class="leise" data-act="gold-setzen">Als Gesamtstand setzen</button>
-      </div>
-      <p class="hinweis">Bei Szenariostufe ${lvl} ist jede eingesammelte Münze ${MUENZWERT[lvl] ?? 2} Gold wert.</p>
+      ${standHtml(ctx, 'gold', p.gold, 'Gold')}
     </section>
     ${questHtml(ctx, p)}
     <section>
@@ -332,8 +336,8 @@ function gegenstandHtml(ctx, item, knoepfe, zusatz = '') {
         <p class="g-meta">${SLOT_NAMEN[item.slot] || item.slot}, ${preisText(ctx, item)}, ${NUTZUNG[item.use]}</p>
         ${item.text ? `<p class="g-text">${esc(item.text)}</p>` : ''}
         ${zusatz}
-        <footer>${knoepfe}</footer>
       </div>
+      <footer>${knoepfe}</footer>
     </article>`;
 }
 
@@ -399,8 +403,8 @@ function ausruestungHtml(ctx, p) {
     const zusatz = `<p class="g-wert">Nutzen in Szenario ${ctx.local.scenario}: <b>${s.score.toFixed(1)}</b></p>${grundeHtml(s.why.map(esc))}`;
     return gegenstandHtml(ctx, item, `
       <button type="button" class="leise" data-act="item-trage" data-id="${item.id}" aria-pressed="${!!e.worn}">${e.worn ? 'Trage ich' : 'Im Lager'}</button>
-      <button type="button" class="leise" data-act="item-verkauf" data-id="${item.id}">Verkaufen für ${Math.floor(item.cost / 2)} Gold</button>
-      <button type="button" class="leise" data-act="item-weg" data-id="${item.id}">Entfernen</button>`, zusatz);
+      <button type="button" class="leise" data-act="item-verkauf" data-id="${item.id}">Verkaufen (${Math.floor(item.cost / 2)} Gold)</button>
+      <button type="button" class="text-knopf" data-act="item-weg" data-id="${item.id}">Entfernen</button>`, zusatz);
   }).join('');
 
   const wohl = wohlstand(ctx);
@@ -486,7 +490,7 @@ function aufstiegHtml(ctx, p, c) {
     urteil = `<p><b>Empfehlung: ${esc(guideWahl.card.name)}.</b> ${esc(tipp.grund)} Guide und Rechnung kommen zum selben Ergebnis.</p>`;
   } else if (guideWahl) {
     urteil = `<p><b>Empfehlung: ${esc(guideWahl.card.name)}.</b> ${esc(tipp.grund)}</p>
-      <p class="hinweis">Rein rechnerisch liegt ${esc(rechnung.card.name)} vorn. Die Rechnung sieht vor allem Schaden und Zahlenwerte. Lichterzeugung, Unterstützung für Mitspieler und Sondertexte wiegt der Guide besser ab, deshalb folgt die Empfehlung ihm.</p>`;
+      <p class="hinweis">Rein rechnerisch liegt ${esc(rechnung.card.name)} vorn. Die Rechnung sieht vor allem Zahlenwerte, Unterstützung und Sondertexte wiegt der Guide besser ab.</p>`;
   } else {
     urteil = `<p><b>Empfehlung: ${esc(rechnung.card.name)}.</b> Für diese Klasse ist kein Guide hinterlegt. Die Empfehlung kommt aus dem Vergleich über ${rat.scenarios} Szenarien.</p>`;
   }
@@ -605,7 +609,7 @@ function verbessernHtml(ctx, p) {
       <h2>Was sich am meisten lohnt</h2>
       <p class="gold klein"><span class="muenze" aria-hidden="true"></span><b>${p.gold}</b> Gold</p>
       <ol class="vorschlaege">${topHtml || '<li>Keine freien Verbesserungsfelder in deinem Kartenvorrat.</li>'}</ol>
-      <p class="hinweis">Die Zahl in Klammern ist die Initiative der Karte, daran findest du sie im Stapel. Faustregel: Nutzen pro Einsatz mal Einsätze pro Szenario, geteilt durch die Kosten. Dauerhafte Effekte zählen vielfach, Verlustaktionen einmal.</p>
+      <p class="hinweis">In Klammern steht die Initiative der Karte. Gerechnet wird Nutzen mal Einsätze pro Szenario, geteilt durch die Kosten.</p>
       ${guide && guide.verbesserungen ? `<h3 class="zwischen">Laut Guides</h3><ul class="aenderungen">${guide.verbesserungen.map((t) => `<li>${esc(mitInitiative(t, alleKarten))}</li>`).join('')}</ul><p class="hinweis">Quelle: ${esc(guide.verbesserungenQuelle || guide.quelle)}.</p>` : ''}
     </section>
     <section>
@@ -613,7 +617,7 @@ function verbessernHtml(ctx, p) {
       <label class="sr" for="enhKarte">Karte</label>
       <select id="enhKarte" class="auswahl">${mitFeld.map((c) => `<option value="${c.id}" ${wahl && c.id === wahl.id ? 'selected' : ''}>${esc(c.name)} (${c.initiative}), Stufe ${c.level}</option>`).join('')}</select>
       <ul class="felder">${felder || '<li>Diese Karte hat keine Verbesserungsfelder.</li>'}</ul>
-      <p class="hinweis">Kosten nach Regelheft: Grundpreis, doppelt bei mehreren Zielen, plus 25 Gold je Kartenstufe über 1, plus 75 Gold je Verbesserung, die schon auf derselben Aktion klebt. Felder von Beschwörungen fehlen noch.</p>
+      <p class="hinweis">Kosten nach Regelheft, inklusive Aufschlag für Kartenstufe und vorhandene Verbesserungen. Felder von Beschwörungen fehlen noch.</p>
       <p class="hinweis">Verbesserte Karten: ${verbesserteKarten}. Erlaubt sind so viele verbesserte Karten wie eure Wohlstandsstufe (${prosp}).</p>
     </section>`;
 }
@@ -674,6 +678,15 @@ export function heldClick(ctx, b) {
     if (n == null || (n === 0 && act !== 'ep-setzen')) { ctx.setStatus('Bitte erst eine Zahl eintragen.', true); return true; }
     p.xp = act === 'ep-plus' ? p.xp + n : act === 'ep-minus' ? Math.max(0, p.xp - n) : n;
     p.xpGeschaetzt = false;
+    return fertig();
+  }
+  if (act === 'stand-edit') { ctx.local.standEdit = b.dataset.was; ctx.render(); return true; }
+  if (act === 'stand-zu') { ctx.local.standEdit = null; ctx.render(); return true; }
+  if (act === 'stand-ok') {
+    const n = zahl(ctx, 'standWert');
+    if (n == null) { ctx.setStatus('Bitte erst eine Zahl eintragen.', true); return true; }
+    if (b.dataset.was === 'ep') { ctx.local.epAlt = Math.round(xpProgress(p.xp, p.level).ratio * 100); p.xp = n; p.xpGeschaetzt = false; } else p.gold = n;
+    ctx.local.standEdit = null;
     return fertig();
   }
   if (act === 'ep-bonus') { p.xp += Number(b.dataset.wert) || 0; p.xpGeschaetzt = false; return fertig(); }

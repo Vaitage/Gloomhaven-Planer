@@ -23,6 +23,7 @@ const local = {
   poolFilter: 'vorrat',
   losses: 2,
   planEvents: [],
+  klapp: new Set(),
   rastArt: [],
   planOffen: null,
   longRest: false,
@@ -37,9 +38,14 @@ const local = {
 // ---------- Laden und Speichern ----------
 
 const statusEl = $('#speicherStatus');
+// Meldung oben rechts. Erfolgsmeldungen verschwinden nach kurzer Zeit, Fehler bleiben stehen.
+let statusTimer = null;
 function setStatus(text, bad = false) {
   statusEl.textContent = text;
   statusEl.classList.toggle('fehler', bad);
+  statusEl.classList.remove('blass');
+  clearTimeout(statusTimer);
+  if (!bad && text) statusTimer = setTimeout(() => statusEl.classList.add('blass'), 2500);
 }
 
 // Zwei Betriebsarten: Mit Server (Raspberry Pi) liegt der Stand auf dem Server.
@@ -286,7 +292,11 @@ function cardHtml(card, s, opts = {}) {
   const lvl = card.level === 'X' ? 'X' : card.level;
   const needsOwn = card.level !== 'X' && card.level > 1;
   const isOwned = !needsOwn || owned().includes(card.id);
-  const why = s ? s.why.slice(0, 4).map((w) => `<li class="${w.good ? 'gut' : 'schlecht'}">${esc(w.text)} <span class="wo">(${w.half})</span></li>`).join('') : '';
+  const grund = (w) => `<li class="${w.good ? 'gut' : 'schlecht'}">${esc(w.text)} <span class="wo">(${w.half})</span></li>`;
+  const gruende = s ? s.why.slice(0, 4) : [];
+  // Der wichtigste Grund steht da, weitere klappen auf
+  const why = !gruende.length ? '' : gruende.length === 1 ? `<ul class="gruende">${grund(gruende[0])}</ul>`
+    : `<details class="mehr"><summary><ul class="gruende">${grund(gruende[0])}</ul><span class="mehr-knopf">${gruende.length - 1} weitere</span></summary><ul class="gruende">${gruende.slice(1).map(grund).join('')}</ul></details>`;
   return `
     <article class="karte ${inHand ? 'in-hand' : ''} ${isOwned ? '' : 'fremd'}">
       <header>
@@ -299,9 +309,9 @@ function cardHtml(card, s, opts = {}) {
       </header>
       ${halfHtml(card.top, 'oben')}
       ${halfHtml(card.bottom, 'unten')}
-      ${why ? `<ul class="gruende">${why}</ul>` : ''}
+      ${why}
       <footer>
-        ${card.img ? `<button type="button" class="leise" data-act="bild" data-img="${esc(card.img)}" data-name="${esc(card.name)}">Karte ansehen</button>` : ''}
+        ${card.img ? `<button type="button" class="leise" data-act="bild" data-img="${esc(card.img)}" data-name="${esc(card.name)}">Bild</button>` : ''}
         ${needsOwn ? `<button type="button" class="leise" data-act="besitz" data-id="${card.id}" aria-pressed="${isOwned}">${isOwned ? 'Im Vorrat' : 'Zum Vorrat'}</button>` : ''}
         ${isOwned && !opts.noHand ? `<button type="button" class="${inHand ? 'leise' : 'haupt'}" data-act="hand" data-id="${card.id}" aria-pressed="${inHand}">${inHand ? 'Aus der Hand' : 'In die Hand'}</button>` : ''}
       </footer>
@@ -368,7 +378,7 @@ function renderScenario() {
         </table>
       </div>
       <p>Mit Schild 1 kommen noch ${anteil(1)} % des Schadens durch, mit Schild 2 noch ${anteil(2)} %, mit Schild 3 noch ${anteil(3)} %.</p>
-      <p class="hinweis">Mittelwert über alle Karten des jeweiligen Monsterdecks, ohne Angriffsmodifikatoren. Der stärkste einzelne Treffer liegt bei ${Math.max(...inc.rows.map((r) => r.max))}.</p>
+      <p class="hinweis">Mittelwert je Monsterdeck, ohne Angriffsmodifikatoren. Stärkster Einzeltreffer: ${Math.max(...inc.rows.map((r) => r.max))}.</p>
     </section>` : '';
 
   view.innerHTML = `
@@ -426,9 +436,14 @@ function renderCards() {
 // ---------- Reiter: Hand ----------
 
 function rulerHtml(cards) {
-  const marks = cards.map((c) => {
+  // Liegen Initiativen dicht beieinander, wandert die Zahl eine Zeile höher, damit nichts überlappt
+  let vorher = -99;
+  let ebene = 0;
+  const marks = [...cards].sort((a, b) => a.initiative - b.initiative).map((c) => {
     const loss = c.top.lost || c.bottom.lost;
-    return `<span class="strich ${loss ? 'verlust' : ''}" style="left:${c.initiative}%" title="${esc(c.name)}: ${c.initiative}"><i>${c.initiative}</i></span>`;
+    ebene = c.initiative - vorher < 7 ? (ebene + 1) % 3 : 0;
+    vorher = c.initiative;
+    return `<span class="strich e${ebene} ${loss ? 'verlust' : ''}" style="left:${c.initiative}%" title="${esc(c.name)}: ${c.initiative}"><i>${c.initiative}</i></span>`;
   }).join('');
   return `<div class="lineal" role="img" aria-label="Initiativen der Handkarten: ${cards.map((c) => c.initiative).sort((a, b) => a - b).join(', ')}">
     <span class="skala">${[1, 25, 50, 75, 99].map((n) => `<b style="left:${n}%">${n}</b>`).join('')}</span>${marks}</div>`;
@@ -524,18 +539,25 @@ function stepHtml(s, einsatz = []) {
   if (s.hungry.length) notes.push(`Der Bonus braucht ${s.hungry.map(elemName).join(', ')} von einem Mitspieler.`);
   if (s.lost.length) notes.push(s.finale ? 'Letzte Runde: Verlustaktionen kosten jetzt nichts mehr.' : 'Verlustaktion eingeplant. Nur spielen, wenn sie hier wirklich viel bewirkt.');
   const odds = s.odds.slice(0, 3).map((o) => `${esc(o.name)} in ${o.before} von ${o.of} Fällen`).join(', ');
+  // Kurzfassung für die zugeklappte Runde: vor wie vielen Gegnertypen bist du meistens dran?
+  const typen = s.odds.slice(0, 3);
+  const davor = typen.filter((o) => o.of && o.before / o.of >= 0.5).length;
+  const kurz = typen.length ? `meist vor ${davor} von ${typen.length} Gegnertypen` : esc(s.leadWhy);
+  const offen = local.planOffen === s.n;
   return `
-    <li class="runde ${s.reserve ? 'reserve' : ''}" data-runde="${s.n}">
-      <div class="runde-kopf"><span class="runde-nr">Runde ${s.n}</span><span class="runde-ini">Initiative ${s.lead}</span></div>
+    <li class="runde ${s.reserve ? 'reserve' : ''} ${offen ? 'offen' : ''}" data-runde="${s.n}">
+      <button type="button" class="runde-kopf" data-act="tisch-offen" data-n="${s.n}" aria-expanded="${offen}">
+        <span class="runde-nr">Runde ${s.n}</span><span class="runde-ini">Initiative ${s.lead}</span><span class="pfeil" aria-hidden="true"></span>
+      </button>
       ${actionHtml(s.top, 'oben')}
       ${actionHtml(s.bottom, 'unten')}
-      <p class="hinweis">Führe mit der ${s.lead}: ${esc(s.leadWhy)}.${s.other !== s.lead ? ` Alternative: ${s.other}.` : ''}</p>
+      ${offen ? '' : `<p class="runde-kurz">Führe mit der ${s.lead}, ${kurz}${notes.length ? ` · ${notes.length === 1 ? '1 Hinweis' : `${notes.length} Hinweise`}` : ''}</p>`}
+      ${offen ? `<p class="hinweis">Führe mit der ${s.lead}: ${esc(s.leadWhy)}.${s.other !== s.lead ? ` Alternative: ${s.other}.` : ''}</p>
       ${odds ? `<p class="quote">Damit bist du dran vor: ${odds}.</p>` : ''}
-      ${notes.length ? `<ul class="gruende">${notes.map((n) => `<li class="neutral">${esc(n)}</li>`).join('')}</ul>` : ''}
+      ${notes.length ? `<ul class="gruende">${notes.map((n) => `<li class="neutral">${esc(n)}</li>`).join('')}</ul>` : ''}` : ''}
       ${einsatz.map((x) => `<p class="einsatz"><span class="marke gut">Gegenstand</span> <b>${esc(x.item.name)}</b>: ${esc(x.why)}</p>`).join('')}
       ${Object.entries(s.basicBy || {}).map(([side, i]) => `<p class="einsatz"><span class="marke gut">Eingetragen</span> Von <b>${esc(s[side].card.name)}</b> nur die Standardaktion gespielt, die Karte bleibt im Spiel. <button type="button" class="text-knopf" data-act="tisch-weg" data-i="${i}">Eingabe entfernen</button></p>`).join('')}
-      <button type="button" class="text-knopf" data-act="tisch-offen" data-n="${s.n}" aria-expanded="${local.planOffen === s.n}">${local.planOffen === s.n ? 'Schließen' : 'Nach dieser Runde ist etwas passiert'}</button>
-      ${local.planOffen === s.n ? tischHtml(s) : ''}
+      ${offen ? `<span class="feldname tisch-titel">Am Tisch lief es anders?</span>${tischHtml(s)}` : ''}
     </li>`;
 }
 
@@ -555,8 +577,8 @@ function tischHtml(s) {
         <select id="tisch-karte" class="auswahl">${karten}</select></label>
       <div class="knopfreihe">
         <button type="button" class="leise" data-act="tisch-karte" data-n="${s.n}" ${karten ? '' : 'disabled'}>Karte als verloren eintragen</button>
-        <button type="button" class="leise" data-act="tisch-rast" data-n="${s.n}" data-val="short" ${s.canRest ? '' : 'disabled'}>Jetzt kurz rasten</button>
-        <button type="button" class="leise" data-act="tisch-rast" data-n="${s.n}" data-val="long" ${s.canRest ? '' : 'disabled'}>Jetzt lang rasten</button>
+        <button type="button" class="leise" data-act="tisch-rast" data-n="${s.n}" data-val="short" ${s.canRest ? '' : 'disabled'}>Kurz rasten</button>
+        <button type="button" class="leise" data-act="tisch-rast" data-n="${s.n}" data-val="long" ${s.canRest ? '' : 'disabled'}>Lang rasten</button>
       </div>
       <span class="feldname">Element liegt aus, zum Beispiel durch eine Angriffskarte</span>
       <div class="elemente">${ELEMENTE.map((e) => `<button type="button" class="leise" data-act="tisch-element" data-n="${s.n}" data-el="${e}" aria-pressed="${liegt.has(e)}">${esc(elemName(e))}</button>`).join('')}</div>
@@ -582,6 +604,11 @@ function renderKeep(selector) {
   render();
   const neu = selector ? li(view.querySelector(selector)) : null;
   if (neu && oben != null) window.scrollBy(0, neu.getBoundingClientRect().top - oben);
+}
+
+// Einklappbarer Abschnitt. Der Zustand bleibt beim Neuzeichnen erhalten.
+function klapp(id, titel, inhalt) {
+  return `<details class="klapp" data-klapp="${id}" ${local.klapp.has(id) ? 'open' : ''}><summary>${titel}</summary><div class="klapp-inhalt">${inhalt}</div></details>`;
 }
 
 function renderPlan() {
@@ -638,33 +665,25 @@ function renderPlan() {
         <div><b>${plan.xp}</b><span>EP aus Karten</span></div>
       </div>
       <p>${p.enemies === 0 ? 'Für dieses Szenario sind keine Gegner hinterlegt.' : urteil}</p>
+      ${klapp('plan-dauer', `Dauer und Spielweise <span class="klapp-wert">${target} Runden${eigen ? ', von dir gesetzt' : ''}</span>`, `
       <label class="regler">Das Szenario dauert etwa <output>${target}</output> Runden
         <input type="range" min="6" max="30" value="${target}" data-range="target">
       </label>
-      <p class="hinweis">Schätzung der App: ${est.rounds} Runden${cal.n ? `, angepasst an ${cal.n} eingetragene Partien` : ''}. Je kürzer das Szenario, desto mehr Verlustaktionen plant sie früh ein. Unter „Notizen“ trägst du nach dem Abend die echte Rundenzahl ein.</p>
+      <p class="hinweis">Schätzung der App: ${est.rounds} Runden${cal.n ? `, angepasst an ${cal.n} eingetragene Partien` : ''}. Je kürzer das Szenario, desto früher plant sie Verlustaktionen ein.</p>
       ${eigen ? '<div class="knopfreihe"><button type="button" class="leise" data-act="ziel-reset">Zurück zur Schätzung</button></div>' : ''}
       <label class="haken"><input type="checkbox" data-check="longRest" ${local.longRest ? 'checked' : ''}> Ich mache lange Rasten</label>
-      <label class="haken"><input type="checkbox" data-check="tank" ${profile().tank ? 'checked' : ''}> Ich will die Angriffe auf mich ziehen</label>
-      <p class="hinweis">Der Plan kennt weder Positionen noch die gezogenen Monsterkarten. Nimm ihn als Reihenfolge-Vorschlag und weiche ab, wenn die Lage es verlangt.</p>
-    </section>
-    ${plan.killOrder.length ? `<section>
-      <h2>Wen zuerst angreifen</h2>
-      <ol class="ziele">${plan.killOrder.map((k) => `<li><b>${esc(k.name)}</b> (${k.count}× ${typ[k.type]})<br><span class="hinweis">${esc(k.why.join(', '))}</span></li>`).join('')}</ol>
-    </section>` : ''}
-    ${inits ? `<section>
-      <h2>Wann die Gegner dran sind</h2>
-      <ul class="initiativen">${inits}</ul>
-      <p class="hinweis">Das sind die Initiativen der acht Karten je Monsterdeck. Bei Gleichstand bist du vor dem Monster dran.</p>
-      <p class="hinweis">Fokus-Regel: Ein Monster greift an, wen es mit der wenigsten Bewegung erreicht. Bei Gleichstand den Näheren, danach den mit der früheren Initiative. Wer Angriffe auf sich ziehen will, steht vorn und geht früh.</p>
-    </section>` : ''}
-    <section>
-      <h2>Deine Gegenstände im Plan</h2>
-      ${einsatz.length ? `<ul class="einsaetze">${einsatz.map((x) => `<li><b>${esc(x.item.name)}</b><span class="wann">${esc(x.when)}</span><span class="hinweis">${esc(x.why)}</span></li>`).join('')}</ul>`
-    : '<p class="leer">Du trägst keine Gegenstände. Trag sie im Charakterbildschirm unter „Ausrüstung“ ein, dann plant die App sie mit ein.</p>'}
-      <p class="hinweis">Gerechnet wird mit den Gegenständen, die du unter „Ausrüstung“ als getragen markiert hast.</p>
+      <label class="haken"><input type="checkbox" data-check="tank" ${profile().tank ? 'checked' : ''}> Ich will die Angriffe auf mich ziehen</label>`)}
+      ${plan.killOrder.length ? klapp('plan-ziele', 'Wen zuerst angreifen', `<ol class="ziele">${plan.killOrder.map((k) => `<li><b>${esc(k.name)}</b> (${k.count}× ${typ[k.type]})<br><span class="hinweis">${esc(k.why.join(', '))}</span></li>`).join('')}</ol>`) : ''}
+      ${inits ? klapp('plan-inits', 'Wann die Gegner dran sind', `<ul class="initiativen">${inits}</ul>
+      <p class="hinweis">Die Initiativen der acht Karten je Monsterdeck. Bei Gleichstand bist du vor dem Monster dran.</p>
+      <p class="hinweis">Fokus-Regel: Ein Monster greift an, wen es mit der wenigsten Bewegung erreicht. Bei Gleichstand den Näheren, danach den mit der früheren Initiative.</p>`) : ''}
+      ${klapp('plan-items', `Deine Gegenstände im Plan <span class="klapp-wert">${einsatz.length}</span>`, einsatz.length
+    ? `<ul class="einsaetze">${einsatz.map((x) => `<li><b>${esc(x.item.name)}</b><span class="wann">${esc(x.when)}</span><span class="hinweis">${esc(x.why)}</span></li>`).join('')}</ul>`
+    : '<p class="leer">Du trägst keine Gegenstände. Trag sie im Charakterbildschirm unter „Ausrüstung“ ein, dann plant die App sie mit ein.</p>')}
     </section>
     <section>
       <h2>Runde für Runde</h2>
+      <p class="hinweis">Ein Vorschlag für die Reihenfolge. Tippe auf eine Runde für die Begründung oder um einzutragen, was am Tisch anders lief.</p>
       ${rastGewaehlt ? `<p class="hinweis">Der Plan rechnet mit dem, was du vom Tisch eingetragen hast.${kosten} <button type="button" class="text-knopf" data-act="rast-zurueck">Zurück zum Vorschlag</button></p>` : ''}
       <ol class="plan">${schritte}</ol>
       <div class="knopfreihe"><button type="button" class="leise" data-go="notizen">Szenario abschließen</button></div>
@@ -714,7 +733,7 @@ function renderNotes() {
         ${xpProgress(pr.xp, pr.level).ready ? '<button type="button" class="haupt" data-act="zum-held" data-held="aufstieg">Stufenaufstieg: Karte wählen</button>' : ''}
         ${perksAllowed(pr.level, pr.checks) > perksGenommen(pr) ? '<button type="button" class="leise" data-act="zum-held" data-held="deck">Ein Perk ist frei</button>' : ''}
       </div>` : ''}
-      <p class="hinweis">${pr ? 'EP und Gold behältst du auch bei einer Niederlage, den Bonus und die Haken gibt es nur beim Sieg. Trägst du neu ein, wird der alte Eintrag vorher zurückgerechnet. ' : ''}Aus gewonnenen Partien lernt die App, wie lange eure Szenarien wirklich dauern, und plant die Verlustkarten danach.${cal.n ? ` Bisher ${cal.n} Partien: ihr braucht ${Math.round(cal.factor * 100)} % der geschätzten Runden.` : ''}</p>
+      <p class="hinweis">${pr ? 'EP und Gold bleiben auch bei einer Niederlage, Bonus und Haken gibt es nur beim Sieg. Ein neuer Eintrag ersetzt den alten. ' : ''}Aus den Rundenzahlen lernt die App, wie lange eure Szenarien dauern.${cal.n ? ` Bisher ${cal.n} Partien: ihr braucht ${Math.round(cal.factor * 100)} % der geschätzten Runden.` : ''}</p>
     </section>
     <section>
       <h2>Notiz zu diesem Szenario</h2>
@@ -817,7 +836,7 @@ function render() {
 const heldCtx = {
   get data() { return data; },
   get state() { return state; },
-  local, view, esc, seg, classIconHtml, halfHtml, condName, elemName, setStatus,
+  local, view, esc, seg, classIconHtml, klapp, halfHtml, condName, elemName, setStatus,
   profile, character, owned, pool, currentProfile, saveProfile, saveShared, render, classLabel, selectProfile,
 };
 
@@ -837,6 +856,9 @@ document.querySelector('.reiter').addEventListener('click', (e) => {
   render();
   window.scrollTo(0, 0);
 });
+
+// Auf- und zugeklappte Abschnitte merken
+view.addEventListener('toggle', (e) => { const d = e.target; if (d.dataset && d.dataset.klapp) local.klapp[d.open ? 'add' : 'delete'](d.dataset.klapp); }, true);
 
 // Bilder, die nicht laden (kein Netz), ausblenden statt ein kaputtes Symbol zu zeigen
 view.addEventListener('error', (e) => { if (e.target instanceof HTMLImageElement && e.target.hasAttribute('data-bild')) e.target.hidden = true; }, true);

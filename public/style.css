@@ -525,3 +525,78 @@ main { overflow-wrap: anywhere; }
 .quest-zahl { max-width: 220px; grid-template-columns: 48px minmax(0, 1fr) 48px; display: grid; }
 .quest-lohn { display: flex; align-items: center; gap: 12px; margin: 4px 0 8px; color: var(--pergament-leise); }
 .quest-lohn svg { flex: none; width: 40px; height: 40px; color: var(--pergament); }
+
+/* ================= Aufgeräumt: kompakte Runden und einklappbare Abschnitte ================= */
+button.runde-kopf { width: 100%; min-height: 44px; margin: -6px 0 4px; padding: 6px 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; display: flex; flex-wrap: nowrap; align-items: center; gap: 12px; }
+button.runde-kopf .runde-ini { margin-left: auto; }
+button.runde-kopf:active:not(:disabled) { transform: none; }
+.pfeil { flex: none; width: 9px; height: 9px; border-right: 2px solid var(--pergament-leise); border-bottom: 2px solid var(--pergament-leise); transform: rotate(45deg) translateY(-2px); }
+[aria-expanded="true"] > .pfeil, details[open] > summary .pfeil { transform: rotate(225deg) translateY(-2px); }
+.runde-kurz { margin: 8px 0 0; font-size: .9rem; color: var(--pergament-leise); }
+.runde.offen { outline: 1px solid var(--schiefer-hell); }
+.tisch-titel { display: block; margin-top: 14px; }
+
+.klapp { border-top: 1px solid var(--schiefer-hell); }
+.klapp:last-of-type { border-bottom: 1px solid var(--schiefer-hell); }
+.klapp > summary { list-style: none; cursor: pointer; min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 4px 0; font-weight: 500; -webkit-user-select: none; user-select: none; }
+.klapp > summary::-webkit-details-marker { display: none; }
+.klapp > summary::after { content: ""; flex: none; margin-left: auto; width: 9px; height: 9px; border-right: 2px solid var(--pergament-leise); border-bottom: 2px solid var(--pergament-leise); transform: rotate(45deg) translateY(-2px); }
+.klapp[open] > summary::after { transform: rotate(225deg) translateY(-2px); }
+.klapp-wert { color: var(--pergament-leise); font-weight: 400; font-size: .9rem; }
+.klapp > summary .klapp-wert { margin-left: auto; }
+.klapp > summary .klapp-wert + * , .klapp > summary:has(.klapp-wert)::after { margin-left: 0; }
+.klapp-inhalt { padding: 4px 0 14px; }
+.klapp-inhalt > :first-child { margin-top: 0; }
+section > p + .klapp { margin-top: 14px; }
+
+/* Meldung oben rechts blendet nach kurzer Zeit aus */
+.status { transition: opacity .4s; }
+.status.blass { opacity: 0; }
+
+/* Karten: weitere Gründe aufklappen, Knöpfe in einer Zeile */
+.mehr > summary { list-style: none; cursor: pointer; display: flex; align-items: flex-end; gap: 10px; }
+.mehr > summary::-webkit-details-marker { display: none; }
+.mehr > summary .gruende { flex: 1; }
+.mehr-knopf { flex: none; padding: 6px 0 2px 8px; font-size: .88rem; color: var(--klasse); text-decoration: underline; white-space: nowrap; }
+.mehr[open] .mehr-knopf { display: none; }
+.mehr > .gruende { margin-top: 2px; }
+.karte > footer { flex-wrap: nowrap; align-items: center; }
+.karte > footer button { white-space: nowrap; }
+.karte > footer [data-act="bild"] { margin-right: auto; background: none; border-color: transparent; padding-left: 0; padding-right: 8px; color: var(--pergament-leise); text-decoration: underline; }
+
+/* Gegenstände: Bild und Text oben, Knöpfe darunter in einer Zeile */
+.gegenstand { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; }
+.gegenstand > .g-inhalt:first-child { grid-column: 1 / -1; }
+.gegenstand > footer { grid-column: 1 / -1; align-items: center; }
+.gegenstand > footer .text-knopf { margin-left: auto; min-height: 40px; padding: 6px 0; font-size: .95rem; color: var(--pergament-leise); }
+.g-bild[hidden] { display: none; }
+.gegenstand:has(> .g-bild[hidden]) > .g-inhalt { grid-column: 1 / -1; }
+
+/* EP und Gold */
+.rechner button { white-space: nowrap; }
+.stand-zeile { display: flex; flex-wrap: wrap; gap: 4px 24px; margin-top: 2px; }
+.stand-zeile .text-knopf { color: var(--pergament-leise); font-size: .95rem; }
+
+/* Initiative-Diagramm: Zahlen nicht umbrechen, dicht liegende versetzen */
+.strich i { white-space: nowrap; overflow-wrap: normal; }
+.strich:nth-child(even) { height: 56px; }
+.strich.e1 { height: 40px; }
+.strich.e2 { height: 24px; }
+.lineal { margin-top: 26px; }
+
+/* Auswahl mit genau acht Feldern: vier und vier statt fünf und drei */
+@media (max-width: 430px) {
+  .seg:not(.unterreiter):has(> button:nth-child(8)):not(:has(> button:nth-child(9))) { grid-template-columns: repeat(4, 1fr); }
+  .unterreiter button { flex: 1 1 auto; padding: 4px 8px; font-size: .88rem; }
+}
+
+/* Feinschliff nach der Durchsicht */
+button.runde-kopf { padding-right: 6px; overflow: hidden; }
+.karte > footer [data-act="bild"] { min-width: 44px; text-align: left; }
+.gegenstand > footer { flex-wrap: nowrap; }
+.gegenstand > footer button { padding: 6px 10px; white-space: nowrap; }
+@media (max-width: 380px) { .gegenstand > footer { flex-wrap: wrap; } }
+@media (max-width: 430px) { .unterreiter button { flex: 1 0 auto; padding: 4px 7px; font-size: .86rem; } }
+.tisch .knopfreihe { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tisch .knopfreihe > [data-act="tisch-karte"] { grid-column: 1 / -1; }
+.tisch .knopfreihe button { width: 100%; }

@@ -24,6 +24,12 @@ Dieselbe Oberfläche ohne Server, in Chrome als App installierbar: `https://vait
 
 Einmalig nötig: Settings → Pages → Source „GitHub Actions“ (oder `gh api -X POST repos/Vaitage/Gloomhaven-Planer/pages -f build_type=workflow`). Lokal getestet (Speichern, Neuladen, offline), auf GitHub Pages und einem echten Android-Gerät noch nicht.
 
+## Oberfläche schlank halten
+- Im Plan zeigt eine Runde zugeklappt nur die zwei Aktionen und eine Kurzzeile. Begründung, Initiative-Details und die Eingaben vom Tisch erscheinen erst, wenn die Runde offen ist (`local.planOffen`).
+- Hintergrundwissen gehört in einklappbare Abschnitte: `klapp(id, titel, inhalt)` in `app.js` (auch über `heldCtx`), der Zustand steht in `local.klapp`.
+- Erklärtexte (`.hinweis`) höchstens ein bis zwei Sätze. Je Karte oder Gegenstand eine Knopfzeile, Nebenaktionen als `text-knopf`.
+- Erfolgsmeldungen oben rechts blenden nach kurzer Zeit aus, Fehler bleiben stehen (`setStatus`).
+
 ## Sicherheit
 - Gespeicherte Daten gelten als nicht vertrauenswürdig. `public/stand.js` (`cleanState`, `cleanShared`, `cleanProfile`) bereinigt sie im Browser nach dem Laden und auf dem Server vor dem Speichern: frei ist nur der Notiztext, alles andere sind Zahlen, Wahrheitswerte oder kurze Bezeichner. Neue gespeicherte Felder dort eintragen, wenn sie Zahlen sein müssen.
 - Notiztext und alles aus Eingabefeldern immer mit `esc()` ausgeben.
